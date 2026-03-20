@@ -19,6 +19,7 @@ data/store_hits_catalog.meta.json
 # Claude / entorno local
 .claude/
 CLAUDE.md
+README.md
 Entrypoint.md
 
 # Python
