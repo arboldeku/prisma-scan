@@ -8,6 +8,9 @@ import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+TZ_MADRID = ZoneInfo("Europe/Madrid")
 
 import gspread
 import pandas as pd
@@ -24,7 +27,7 @@ _scanner_input = components.declare_component("scanner_input", path=str(_SCANNER
 # ─────────────────────────────────────────────
 CATALOG_PATH = Path("data/hits_catalog.csv")
 SALES_DIR    = Path("sales_output")
-TODAY        = datetime.now().strftime("%Y-%m-%d")
+TODAY        = datetime.now(TZ_MADRID).strftime("%Y-%m-%d")
 DAILY_CSV    = SALES_DIR / f"sales_physical_scan_{TODAY}.csv"
 
 USE_SHEETS = "gcp_service_account" in st.secrets
@@ -321,7 +324,7 @@ def register_scan(sku: str) -> tuple[bool, str]:
     product = catalog.loc[sku]
     save_sale({
         "sale_event_id":  str(uuid.uuid4()),
-        "sale_ts":        datetime.now().isoformat(timespec="seconds"),
+        "sale_ts":        datetime.now(TZ_MADRID).isoformat(timespec="seconds"),
         "internal_sku":   sku,
         "display_name":   product["display_name"],
         "language":       product["language"],
@@ -342,7 +345,7 @@ def void_sale(original: dict) -> None:
     """
     save_sale({
         "sale_event_id":  str(uuid.uuid4()),
-        "sale_ts":        datetime.now().isoformat(timespec="seconds"),
+        "sale_ts":        datetime.now(TZ_MADRID).isoformat(timespec="seconds"),
         "internal_sku":   str(original["internal_sku"]),
         "display_name":   original.get("display_name", ""),
         "language":       original["language"],
@@ -415,19 +418,33 @@ if scanned:
 # B2) ENTRADA MANUAL — por si falla una etiqueta
 # ─────────────────────────────────────────────
 with st.expander("Entrada manual (etiqueta dañada)"):
-    # Opciones de set_code + nombre para el selector
-    sets_in_catalog = (
-        catalog.reset_index()[["set_code", "set_name"]]
-        .drop_duplicates()
-        .sort_values("set_name")
-        if "set_name" in catalog.columns
-        else catalog.reset_index()[["set_code"]].drop_duplicates().sort_values("set_code")
-    )
-    set_options = sets_in_catalog["set_code"].tolist() if "set_code" in sets_in_catalog.columns else []
+    # Separar expansiones occidentales y japonesas/coreanas por idioma
+    LANGS_JP = {"JPN", "KOR"}
+    LANGS_OCC = {"ENG", "ESP", "FRA", "DEU", "ITA", "POR"}
 
-    col_a, col_b, col_c = st.columns([1.8, 1.0, 1.0])
-    with col_a:
-        manual_set = st.selectbox("Expansión", options=set_options, index=0 if set_options else None, label_visibility="visible")
+    cat_reset = catalog.reset_index()
+    _sets_occ = (
+        cat_reset[cat_reset["language"].isin(LANGS_OCC)]["set_code"]
+        .drop_duplicates().sort_values().tolist()
+        if "language" in cat_reset.columns and "set_code" in cat_reset.columns else []
+    )
+    _sets_jp = (
+        cat_reset[cat_reset["language"].isin(LANGS_JP)]["set_code"]
+        .drop_duplicates().sort_values().tolist()
+        if "language" in cat_reset.columns and "set_code" in cat_reset.columns else []
+    )
+
+    NONE_OPT = "—"
+    col_occ, col_jp = st.columns(2)
+    with col_occ:
+        sel_occ = st.selectbox("Expansión occidental", options=[NONE_OPT] + _sets_occ)
+    with col_jp:
+        sel_jp  = st.selectbox("Expansión japonesa / coreana", options=[NONE_OPT] + _sets_jp)
+
+    # El set activo es el que no sea "—" (si ambos están rellenos, occidental tiene preferencia)
+    manual_set = sel_occ if sel_occ != NONE_OPT else (sel_jp if sel_jp != NONE_OPT else None)
+
+    col_b, col_c = st.columns([1.0, 1.0])
     with col_b:
         lang_options = sorted(catalog["language"].dropna().unique().tolist()) if "language" in catalog.columns else []
         manual_lang = st.selectbox("Idioma", options=lang_options, label_visibility="visible")
@@ -514,9 +531,9 @@ else:
         unsafe_allow_html=True,
     )
 
-    # Filas — orden cronológico ascendente (más reciente abajo)
+    # Filas — orden cronológico descendente (más reciente arriba)
     row_num = 0
-    for _, row in df_sales.iterrows():
+    for _, row in df_sales.iloc[::-1].iterrows():
         is_void = row["status"] == "void"
         if not is_void:
             row_num += 1
