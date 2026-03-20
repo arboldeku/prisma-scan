@@ -1,0 +1,31 @@
+# Credenciales (NUNCA al repo)
+.streamlit/secrets.toml
+
+# Outputs generados
+sales_output/
+labels_output/
+
+# Generadores de etiquetas (solo uso local)
+generate_labels.py
+generate_ir_labels.py
+generate_all_rarities.py
+label_preview.html
+
+# Datos de release dates (solo uso local para generar etiquetas)
+data/Release dates.csv
+data/Release dates jp.csv
+data/store_hits_catalog.meta.json
+
+# Claude / entorno local
+.claude/
+Entrypoint.md
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+venv/
+.env
+.DS_Store
