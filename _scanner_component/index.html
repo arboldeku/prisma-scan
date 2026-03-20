@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: transparent; overflow: hidden; }
+
+#scan {
+  width: 100%;
+  padding: 11px 14px;
+  font-size: 1.15rem;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  background: #141420;
+  color: #e8e8f0;
+  border: 2px solid #f0c040;
+  border-radius: 10px;
+  outline: none;
+  caret-color: #f0c040;
+}
+#scan::placeholder { color: #8888aa; font-style: italic; }
+#scan:focus        { box-shadow: 0 0 0 3px rgba(240,192,64,0.25); }
+</style>
+</head>
+<body>
+
+<input id="scan" type="text"
+       autocomplete="off" autocorrect="off"
+       autocapitalize="off" spellcheck="false"
+       placeholder="Apunta el escáner y dispara..." />
+
+<script>
+const input = document.getElementById('scan');
+
+/* ── Protocolo Streamlit component ── */
+function toStreamlit(type, extra) {
+  window.parent.postMessage(
+    Object.assign({ isStreamlitMessage: true, type }, extra),
+    '*'
+  );
+}
+
+toStreamlit('streamlit:componentReady', { apiVersion: 1 });
+toStreamlit('streamlit:setFrameHeight', { height: 48 });
+
+/* ── Detección de escáner por velocidad de tecleo ──
+   El escáner manda los caracteres en ráfagas de ~5-15 ms entre sí.
+   Un humano teclea a ≥80 ms entre caracteres.
+   Lógica:
+     - Registramos el tiempo de cada tecla.
+     - Si la cadena tiene ≥4 caracteres Y la velocidad media fue <40 ms/char
+       → es un escáner → enviamos inmediatamente.
+     - Si no llega más input durante 180 ms → enviamos lo que haya
+       (cubre tanto escáneres lentos como entrada manual).
+*/
+let charTimes  = [];
+let lastTime   = 0;
+let debounce   = null;
+let lastSent   = '';
+
+function send(val) {
+  val = val.trim().toUpperCase();
+  if (!val || val === lastSent) return;
+  lastSent = val;
+  setTimeout(() => { lastSent = ''; }, 600); // resetear guard tras 600 ms
+
+  toStreamlit('streamlit:setComponentValue', { value: val, dataType: 'json' });
+  input.value = '';
+  charTimes = [];
+  lastTime  = 0;
+}
+
+input.addEventListener('keydown', function(e) {
+  /* Enter explícito (algunos escáneres lo mandan) */
+  if (e.key === 'Enter') {
+    clearTimeout(debounce);
+    send(input.value);
+    e.preventDefault();
+    return;
+  }
+
+  /* Medir velocidad */
+  const now = performance.now();
+  if (lastTime > 0) charTimes.push(now - lastTime);
+  lastTime = now;
+
+  /* Timeout de 180 ms → escáner ha terminado */
+  clearTimeout(debounce);
+  debounce = setTimeout(() => {
+    send(input.value);
+  }, 180);
+});
+
+input.addEventListener('input', function() {
+  /* Detección por velocidad: ≥5 chars con media < 40 ms → escáner */
+  if (charTimes.length >= 4) {
+    const avg = charTimes.reduce((a, b) => a + b, 0) / charTimes.length;
+    if (avg < 40) {
+      clearTimeout(debounce);
+      /* Pequeño delay para recibir el último char antes de enviar */
+      debounce = setTimeout(() => send(input.value), 60);
+    }
+  }
+});
+
+/* ── Mantener foco ── */
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'streamlit:render') {
+    input.focus();
+  }
+});
+
+document.addEventListener('click', () => input.focus());
+input.focus();
+</script>
+</body>
+</html>
