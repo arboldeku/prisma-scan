@@ -404,7 +404,7 @@ st.markdown(
 scanned = _scanner_input(key=f"scanner_{st.session_state.scan_counter}")
 
 if scanned:
-    sku = str(scanned).strip().upper()
+    sku = str(scanned).strip().upper().replace("/", "-")
     ok, msg = register_scan(sku)
     st.session_state.last_msg = msg
     st.session_state.last_ok  = ok
