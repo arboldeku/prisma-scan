@@ -45,6 +45,7 @@ CSV_COLUMNS = [
     "channel",
     "source_system",
     "status",
+    "sale_type",
 ]
 
 # ─────────────────────────────────────────────
@@ -124,6 +125,12 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
 .alert-ok    { background: #002a10; border: 1px solid #005a20; color: var(--prisma-success); }
 .alert-warn  { background: #2a2000; border: 1px solid #5a4a00; color: var(--prisma-accent); }
 .alert-error { background: #2a0010; border: 1px solid #5a0020; color: var(--prisma-danger); }
+
+/* Pills de tipo venta/cambio */
+.pill-venta  { background:#003d1a; color:#4cdf80; border:1px solid #005a20;
+               border-radius:10px; padding:2px 8px; font-size:0.68rem; font-weight:700; }
+.pill-cambio { background:#001f4d; color:#5badff; border:1px solid #003080;
+               border-radius:10px; padding:2px 8px; font-size:0.68rem; font-weight:700; }
 
 /* Métricas */
 .metric-card {
@@ -335,8 +342,18 @@ def register_scan(sku: str) -> tuple[bool, str]:
         "channel":        "physical_store",
         "source_system":  "store_scan",
         "status":         "completed",
+        "sale_type":      "venta",
     })
     return True, f"{product['display_name']} · {product['language']} · {product['business_rarity']}"
+
+
+def toggle_sale_type(sale_event_id: str) -> None:
+    """Alterna sale_type entre 'venta' y 'cambio' en session_state."""
+    for i, s in enumerate(st.session_state.sales):
+        if s.get("sale_event_id") == sale_event_id:
+            current = s.get("sale_type", "venta")
+            st.session_state.sales[i]["sale_type"] = "cambio" if current == "venta" else "venta"
+            break
 
 
 def void_sale(original: dict) -> None:
@@ -356,6 +373,7 @@ def void_sale(original: dict) -> None:
         "channel":        "physical_store",
         "source_system":  "store_scan",
         "status":         "void",
+        "sale_type":      original.get("sale_type", "venta"),
     })
 
 
@@ -519,8 +537,8 @@ else:
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Cabecera de columnas
-    HDR = st.columns([0.45, 0.7, 2.8, 1.3, 0.55, 1.1, 0.45])
-    for label, col in zip(["#", "Hora", "Carta", "SKU", "Lang", "Rareza", ""], HDR):
+    HDR = st.columns([0.4, 0.65, 2.4, 1.2, 0.5, 1.0, 0.8, 0.4])
+    for label, col in zip(["#", "Hora", "Carta", "SKU", "Lang", "Rareza", "Tipo", ""], HDR):
         col.markdown(
             f'<span style="color:var(--prisma-muted);font-size:0.7rem;'
             f'font-weight:700;text-transform:uppercase;">{label}</span>',
@@ -546,7 +564,7 @@ else:
         # Estilo tachado para filas void
         dim = "color:var(--prisma-muted);text-decoration:line-through;" if is_void else ""
 
-        cols = st.columns([0.45, 0.7, 2.8, 1.3, 0.55, 1.1, 0.45])
+        cols = st.columns([0.4, 0.65, 2.4, 1.2, 0.5, 1.0, 0.8, 0.4])
 
         cols[0].markdown(
             f'<span style="{dim}font-size:0.8rem;">{"🚫" if is_void else row_num}</span>',
@@ -574,9 +592,20 @@ else:
             unsafe_allow_html=True,
         )
 
-        # Botón ✕ solo en filas activas (no en voids)
+        # Pill toggle venta/cambio + botón ✕
         if not is_void:
-            if cols[6].button("✕", key=f"void_{row['sale_event_id']}"):
+            sale_type = row.get("sale_type", "venta")
+            pill_cls  = "pill-venta" if sale_type == "venta" else "pill-cambio"
+            pill_txt  = "💰 Venta" if sale_type == "venta" else "🔄 Cambio"
+            cols[6].markdown(
+                f'<div style="padding-top:4px;">'
+                f'<span class="{pill_cls}" style="cursor:pointer;">{pill_txt}</span></div>',
+                unsafe_allow_html=True,
+            )
+            if cols[6].button("↔", key=f"type_{row['sale_event_id']}", help="Cambiar entre Venta y Cambio"):
+                toggle_sale_type(row["sale_event_id"])
+                st.rerun()
+            if cols[7].button("✕", key=f"void_{row['sale_event_id']}"):
                 void_sale(row.to_dict())
                 st.session_state.last_msg = f"Anulada: {row['display_name']}"
                 st.session_state.last_ok  = True
