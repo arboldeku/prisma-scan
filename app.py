@@ -597,8 +597,8 @@ else:
             unsafe_allow_html=True,
         )
     else:
-        # Scroll a partir de la entrada 20 (altura fija ~900px ≈ 20 entradas)
-        scroll_h = 900 if len(df_lista) > 20 else None
+        # Scroll a partir de la entrada 10 (altura fija ~450px ≈ 10 entradas)
+        scroll_h = 450 if len(df_lista) > 10 else None
         container = st.container(height=scroll_h) if scroll_h else st.container()
         with container:
             for i, (_, row) in enumerate(df_lista.iloc[::-1].iterrows()):
