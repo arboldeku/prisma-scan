@@ -132,6 +132,17 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
 .pill-cambio { background:#001f4d; color:#5badff; border:1px solid #003080;
                border-radius:10px; padding:2px 8px; font-size:0.68rem; font-weight:700; }
 
+/* Banner post-escaneo venta/cambio */
+.type-banner {
+    background: #0a1a0a; border: 1px solid #005a20; border-radius: 12px;
+    padding: 12px 16px; margin: 6px 0 4px 0;
+}
+.type-banner-title { color: #4cdf80; font-size: 0.95rem; font-weight: 700; margin-bottom: 6px; }
+.timer-bar  { height: 3px; background: #1e2e1e; border-radius: 2px; overflow: hidden; margin-top: 6px; }
+.timer-fill { height: 100%; background: #4cdf80;
+              animation: shrink3s 3s linear forwards; }
+@keyframes shrink3s { from { width: 100%; } to { width: 0%; } }
+
 /* Métricas */
 .metric-card {
     background: var(--prisma-surface);
@@ -387,6 +398,8 @@ if "last_ok" not in st.session_state:
 # Contador para resetear el campo de escaneo tras cada registro exitoso
 if "scan_counter" not in st.session_state:
     st.session_state.scan_counter = 0
+if "pending_type_id" not in st.session_state:
+    st.session_state.pending_type_id = None
 
 # ─────────────────────────────────────────────
 # CATÁLOGO
@@ -430,7 +443,37 @@ if scanned:
     st.session_state.last_msg = msg
     st.session_state.last_ok  = ok
     st.session_state.scan_counter += 1
+    if ok:
+        # Guardar el id del último scan para el banner de venta/cambio
+        st.session_state.pending_type_id = st.session_state.sales[-1]["sale_event_id"]
     st.rerun()
+
+# ─────────────────────────────────────────────
+# B1) BANNER VENTA / CAMBIO — aparece tras cada escaneo exitoso
+# ─────────────────────────────────────────────
+if st.session_state.pending_type_id:
+    pending = next(
+        (s for s in st.session_state.sales
+         if s.get("sale_event_id") == st.session_state.pending_type_id),
+        None,
+    )
+    if pending:
+        name = pending.get("display_name", "")
+        st.markdown(
+            f'<div class="type-banner">'
+            f'<div class="type-banner-title">✅ {name} registrado — ¿cómo sale?</div>'
+            f'<div class="timer-bar"><div class="timer-fill"></div></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        col_v, col_c = st.columns(2)
+        if col_v.button("💰  VENTA", use_container_width=True, key="banner_venta"):
+            st.session_state.pending_type_id = None
+            st.rerun()
+        if col_c.button("🔄  CAMBIO", use_container_width=True, key="banner_cambio", type="primary"):
+            toggle_sale_type(st.session_state.pending_type_id)
+            st.session_state.pending_type_id = None
+            st.rerun()
 
 # ─────────────────────────────────────────────
 # B2) ENTRADA MANUAL — por si falla una etiqueta
