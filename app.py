@@ -4,7 +4,6 @@ Sistema standalone de registro de ventas para Prisma, tienda de cartas Pokémon.
 Genera CSV diarios para su posterior carga manual a Drive → Pipeline Bronze.
 """
 
-import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -323,12 +322,14 @@ def _write_to_csv(record: dict) -> None:
 def save_sale(record: dict) -> None:
     """
     Persiste una venta en dos pasos:
-      1. Añade a session_state.sales → UI actualizada al instante (0ms).
-      2. Escribe en Sheets/CSV en hilo de fondo → no bloquea la pantalla.
+      1. Añade a session_state.sales → UI actualizada al instante.
+      2. Escribe en Sheets/CSV de forma síncrona → garantiza persistencia al cerrar navegador.
     """
     st.session_state.sales.append(record)
-    target = _write_to_sheets if USE_SHEETS else _write_to_csv
-    threading.Thread(target=target, args=(record,), daemon=True).start()
+    if USE_SHEETS:
+        _write_to_sheets(record)
+    else:
+        _write_to_csv(record)
 
 
 def register_scan(sku: str) -> tuple[bool, str]:
