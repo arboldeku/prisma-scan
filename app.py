@@ -353,7 +353,7 @@ def register_scan(sku: str) -> tuple[bool, str]:
         "channel":        "physical_store",
         "source_system":  "store_scan",
         "status":         "completed",
-        "sale_type":      "venta",
+        "sale_type":      st.session_state.get("scan_mode", "venta"),
     })
     return True, f"{product['display_name']} · {product['language']} · {product['business_rarity']}"
 
@@ -398,8 +398,8 @@ if "last_ok" not in st.session_state:
 # Contador para resetear el campo de escaneo tras cada registro exitoso
 if "scan_counter" not in st.session_state:
     st.session_state.scan_counter = 0
-if "pending_type_id" not in st.session_state:
-    st.session_state.pending_type_id = None
+if "scan_mode" not in st.session_state:
+    st.session_state.scan_mode = "venta"
 
 # ─────────────────────────────────────────────
 # CATÁLOGO
@@ -443,37 +443,29 @@ if scanned:
     st.session_state.last_msg = msg
     st.session_state.last_ok  = ok
     st.session_state.scan_counter += 1
-    if ok:
-        # Guardar el id del último scan para el banner de venta/cambio
-        st.session_state.pending_type_id = st.session_state.sales[-1]["sale_event_id"]
     st.rerun()
 
 # ─────────────────────────────────────────────
-# B1) BANNER VENTA / CAMBIO — aparece tras cada escaneo exitoso
+# B1) SELECTOR DE MODO — VENTA o CAMBIO (sticky)
 # ─────────────────────────────────────────────
-if st.session_state.pending_type_id:
-    pending = next(
-        (s for s in st.session_state.sales
-         if s.get("sale_event_id") == st.session_state.pending_type_id),
-        None,
-    )
-    if pending:
-        name = pending.get("display_name", "")
-        st.markdown(
-            f'<div class="type-banner">'
-            f'<div class="type-banner-title">✅ {name} registrado — ¿cómo sale?</div>'
-            f'<div class="timer-bar"><div class="timer-fill"></div></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-        col_v, col_c = st.columns(2)
-        if col_v.button("💰  VENTA", use_container_width=True, key="banner_venta"):
-            st.session_state.pending_type_id = None
-            st.rerun()
-        if col_c.button("🔄  CAMBIO", use_container_width=True, key="banner_cambio", type="primary"):
-            toggle_sale_type(st.session_state.pending_type_id)
-            st.session_state.pending_type_id = None
-            st.rerun()
+mode = st.session_state.scan_mode
+col_v, col_c = st.columns(2)
+if col_v.button(
+    "💰  VENTA",
+    use_container_width=True,
+    type="primary" if mode == "venta" else "secondary",
+    key="mode_venta",
+):
+    st.session_state.scan_mode = "venta"
+    st.rerun()
+if col_c.button(
+    "🔄  CAMBIO",
+    use_container_width=True,
+    type="primary" if mode == "cambio" else "secondary",
+    key="mode_cambio",
+):
+    st.session_state.scan_mode = "cambio"
+    st.rerun()
 
 # ─────────────────────────────────────────────
 # B2) ENTRADA MANUAL — por si falla una etiqueta
@@ -545,114 +537,89 @@ if st.session_state.last_msg:
     )
 
 # ─────────────────────────────────────────────
-# D) TABLA DEL DÍA — leída de session_state, sin llamadas de red
+# D) DOS LISTAS: VENTAS | CAMBIOS
 # ─────────────────────────────────────────────
 df_sales = pd.DataFrame(st.session_state.sales, columns=CSV_COLUMNS) if st.session_state.sales else pd.DataFrame(columns=CSV_COLUMNS)
 
-st.markdown('<p class="summary-title">Ventas de hoy</p>', unsafe_allow_html=True)
+st.markdown('<p class="summary-title">Registro de hoy</p>', unsafe_allow_html=True)
 
 if df_sales.empty:
     st.markdown(
         '<div class="alert alert-warn" style="text-align:center; margin-top:0.5rem;">'
-        "Sin ventas registradas hoy — esperando primer escaneo</div>",
+        "Sin registros hoy — esperando primer escaneo</div>",
         unsafe_allow_html=True,
     )
 else:
-    # Métricas netas
-    n_completed = (df_sales["status"] == "completed").sum()
-    n_voided    = (df_sales["status"] == "void").sum()
-    net_count   = n_completed - n_voided
+    df_active = df_sales[df_sales["status"] == "completed"]
+    df_void   = df_sales[df_sales["status"] == "void"]
+    voided_ids = set(df_void["internal_sku"].tolist())
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(
-            f'<div class="metric-card"><p class="metric-value">{net_count}</p>'
-            '<p class="metric-label">Cartas netas</p></div>',
-            unsafe_allow_html=True,
-        )
-    with col2:
-        st.markdown(
-            f'<div class="metric-card"><p class="metric-value">{len(df_sales)}</p>'
-            '<p class="metric-label">Entradas totales</p></div>',
-            unsafe_allow_html=True,
-        )
+    if "sale_type" not in df_active.columns:
+        df_active = df_active.copy()
+        df_active["sale_type"] = "venta"
+    df_ventas  = df_active[df_active["sale_type"] == "venta"]
+    df_cambios = df_active[df_active["sale_type"] == "cambio"]
+
+    n_ventas  = len(df_ventas)
+    n_cambios = len(df_cambios)
+    n_voided  = len(df_void) // 2  # cada void cancela una completed
+
+    # Métricas
+    col1, col2, col3 = st.columns(3)
+    col1.markdown(
+        f'<div class="metric-card"><p class="metric-value" style="color:#4cdf80;">{n_ventas}</p>'
+        '<p class="metric-label">💰 Ventas</p></div>', unsafe_allow_html=True)
+    col2.markdown(
+        f'<div class="metric-card"><p class="metric-value" style="color:#5badff;">{n_cambios}</p>'
+        '<p class="metric-label">🔄 Cambios</p></div>', unsafe_allow_html=True)
+    col3.markdown(
+        f'<div class="metric-card"><p class="metric-value" style="color:var(--prisma-muted);">{n_ventas + n_cambios}</p>'
+        '<p class="metric-label">Total neto</p></div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Cabecera de columnas
-    HDR = st.columns([0.4, 0.65, 2.4, 1.2, 0.5, 1.0, 0.8, 0.4])
-    for label, col in zip(["#", "Hora", "Carta", "SKU", "Lang", "Rareza", "Tipo", ""], HDR):
-        col.markdown(
-            f'<span style="color:var(--prisma-muted);font-size:0.7rem;'
-            f'font-weight:700;text-transform:uppercase;">{label}</span>',
-            unsafe_allow_html=True,
-        )
-    st.markdown(
-        '<hr style="margin:0.25rem 0 0.4rem 0; border-color:var(--prisma-border);">',
-        unsafe_allow_html=True,
-    )
-
-    # Filas — orden cronológico descendente (más reciente arriba)
-    row_num = 0
-    for _, row in df_sales.iloc[::-1].iterrows():
-        is_void = row["status"] == "void"
-        if not is_void:
-            row_num += 1
-
-        try:
-            time_str = datetime.fromisoformat(str(row["sale_ts"])).strftime("%H:%M")
-        except (ValueError, TypeError):
-            time_str = "—"
-
-        # Estilo tachado para filas void
-        dim = "color:var(--prisma-muted);text-decoration:line-through;" if is_void else ""
-
-        cols = st.columns([0.4, 0.65, 2.4, 1.2, 0.5, 1.0, 0.8, 0.4])
-
-        cols[0].markdown(
-            f'<span style="{dim}font-size:0.8rem;">{"🚫" if is_void else row_num}</span>',
-            unsafe_allow_html=True,
-        )
-        cols[1].markdown(
-            f'<span style="{dim}font-size:0.78rem;font-family:monospace;">{time_str}</span>',
-            unsafe_allow_html=True,
-        )
-        cols[2].markdown(
-            f'<span style="{dim}font-size:0.85rem;">{row["display_name"]}</span>',
-            unsafe_allow_html=True,
-        )
-        cols[3].markdown(
-            f'<span style="{dim}font-size:0.7rem;font-family:monospace;color:var(--prisma-muted);">'
-            f'{row["internal_sku"]}</span>',
-            unsafe_allow_html=True,
-        )
-        cols[4].markdown(
-            f'<span style="{dim}font-size:0.75rem;">{row["language"]}</span>',
-            unsafe_allow_html=True,
-        )
-        cols[5].markdown(
-            f'<span style="{dim}font-size:0.72rem;">{row["business_rarity"]}</span>',
-            unsafe_allow_html=True,
-        )
-
-        # Pill toggle venta/cambio + botón ✕
-        if not is_void:
-            sale_type = row.get("sale_type", "venta")
-            pill_cls  = "pill-venta" if sale_type == "venta" else "pill-cambio"
-            pill_txt  = "💰 Venta" if sale_type == "venta" else "🔄 Cambio"
-            cols[6].markdown(
-                f'<div style="padding-top:4px;">'
-                f'<span class="{pill_cls}" style="cursor:pointer;">{pill_txt}</span></div>',
+    def render_lista(df_tipo, color, prefix):
+        """Renderiza una lista compacta de cartas con botón ✕."""
+        for _, row in df_tipo.iloc[::-1].iterrows():
+            try:
+                t = datetime.fromisoformat(str(row["sale_ts"])).strftime("%H:%M")
+            except (ValueError, TypeError):
+                t = "—"
+            c1, c2 = st.columns([5, 1])
+            c1.markdown(
+                f'<div style="border-left:3px solid {color};padding-left:8px;margin-bottom:4px;">'
+                f'<span style="font-size:0.85rem;font-weight:600;">{row["display_name"]}</span><br>'
+                f'<span style="font-size:0.7rem;color:var(--prisma-muted);">'
+                f'{t} · {row["language"]} · {row["business_rarity"]}</span></div>',
                 unsafe_allow_html=True,
             )
-            if cols[6].button("↔", key=f"type_{row['sale_event_id']}", help="Cambiar entre Venta y Cambio"):
-                toggle_sale_type(row["sale_event_id"])
-                st.rerun()
-            if cols[7].button("✕", key=f"void_{row['sale_event_id']}"):
+            if c2.button("✕", key=f"void_{prefix}_{row['sale_event_id']}"):
                 void_sale(row.to_dict())
                 st.session_state.last_msg = f"Anulada: {row['display_name']}"
                 st.session_state.last_ok  = True
                 st.rerun()
+
+    col_v, col_c = st.columns(2)
+    with col_v:
+        st.markdown(
+            '<p style="color:#4cdf80;font-weight:700;font-size:0.8rem;'
+            'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">💰 Ventas</p>',
+            unsafe_allow_html=True)
+        if df_ventas.empty:
+            st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">—</span>',
+                        unsafe_allow_html=True)
+        else:
+            render_lista(df_ventas, "#4cdf80", "v")
+    with col_c:
+        st.markdown(
+            '<p style="color:#5badff;font-weight:700;font-size:0.8rem;'
+            'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">🔄 Cambios</p>',
+            unsafe_allow_html=True)
+        if df_cambios.empty:
+            st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">—</span>',
+                        unsafe_allow_html=True)
+        else:
+            render_lista(df_cambios, "#5badff", "c")
 
 # ─────────────────────────────────────────────
 # E) EXPORTAR CSV DEL DÍA
