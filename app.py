@@ -348,7 +348,15 @@ def register_scan(sku: str) -> tuple[bool, str]:
     Retorna (éxito, mensaje_feedback).
     """
     if sku not in catalog.index:
-        return False, f"SKU no encontrado: {sku}"
+        # Fallback: buscar por cardmarket_id (etiquetas impresas sin sufijo -0001)
+        if "cardmarket_id" in catalog.columns:
+            matches = catalog[catalog["cardmarket_id"] == sku]
+            if not matches.empty:
+                sku = matches.index[0]
+            else:
+                return False, f"SKU no encontrado: {sku}"
+        else:
+            return False, f"SKU no encontrado: {sku}"
 
     product = catalog.loc[sku]
     save_sale({
