@@ -301,12 +301,22 @@ def load_daily_sales() -> pd.DataFrame:
 
 
 def _write_to_sheets(record: dict) -> None:
-    """Escribe en Sheets desde un hilo de fondo — no bloquea la UI."""
+    """Escribe en Sheets de forma síncrona. Actualiza cabecera si faltan columnas."""
     try:
         sheet = get_sheet()
-        sheet.append_row([record[col] for col in CSV_COLUMNS], value_input_option="RAW")
-    except Exception:
-        pass  # el dato ya está en session_state; no es crítico
+        # Sincronizar cabecera: añadir columnas que falten sin borrar las existentes
+        headers = sheet.row_values(1)
+        for i, col in enumerate(CSV_COLUMNS):
+            if col not in headers:
+                sheet.update_cell(1, len(headers) + 1, col)
+                headers.append(col)
+        sheet.append_row(
+            [record.get(col, "") for col in CSV_COLUMNS],
+            value_input_option="RAW",
+        )
+        st.session_state["sheets_error"] = None
+    except Exception as e:
+        st.session_state["sheets_error"] = str(e)
 
 
 def _write_to_csv(record: dict) -> None:
@@ -527,8 +537,11 @@ with st.expander("Entrada manual (etiqueta dañada)"):
             st.warning("Rellena los tres campos.")
 
 # ─────────────────────────────────────────────
-# C) FEEDBACK DEL ÚLTIMO ESCANEO
+# C) FEEDBACK DEL ÚLTIMO ESCANEO + ERRORES SHEETS
 # ─────────────────────────────────────────────
+if st.session_state.get("sheets_error"):
+    st.error(f"⚠️ Error al guardar en Sheets: {st.session_state['sheets_error']}")
+
 if st.session_state.last_msg:
     css = "alert-ok" if st.session_state.last_ok else "alert-error"
     icon = "✅" if st.session_state.last_ok else "❌"
