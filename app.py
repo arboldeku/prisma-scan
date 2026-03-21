@@ -267,7 +267,7 @@ def load_catalog() -> pd.DataFrame:
     if not CATALOG_PATH.exists():
         st.error(f"Catálogo no encontrado en `{CATALOG_PATH}`.")
         st.stop()
-    df = pd.read_csv(CATALOG_PATH, dtype={"internal_sku": str})
+    df = pd.read_csv(CATALOG_PATH, dtype={"internal_sku": str, "cardmarket_id": str})
     df = df.rename(columns={
         "card_name": "display_name",
         "lang":      "language",
