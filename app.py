@@ -578,48 +578,58 @@ else:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    def render_lista(df_tipo, color, prefix):
-        """Renderiza una lista compacta de cartas con botón ✕."""
-        for _, row in df_tipo.iloc[::-1].iterrows():
-            try:
-                t = datetime.fromisoformat(str(row["sale_ts"])).strftime("%H:%M")
-            except (ValueError, TypeError):
-                t = "—"
-            c1, c2 = st.columns([5, 1])
-            c1.markdown(
-                f'<div style="border-left:3px solid {color};padding-left:8px;margin-bottom:4px;">'
-                f'<span style="font-size:0.85rem;font-weight:600;">{row["display_name"]}</span><br>'
-                f'<span style="font-size:0.7rem;color:var(--prisma-muted);">'
-                f'{t} · {row["language"]} · {row["business_rarity"]}</span></div>',
-                unsafe_allow_html=True,
-            )
-            if c2.button("✕", key=f"void_{prefix}_{row['sale_event_id']}"):
-                void_sale(row.to_dict())
-                st.session_state.last_msg = f"Anulada: {row['display_name']}"
-                st.session_state.last_ok  = True
-                st.rerun()
+    # Lista activa según el modo seleccionado
+    modo_activo = st.session_state.scan_mode
+    if modo_activo == "venta":
+        df_lista, color, prefix, label = df_ventas, "#4cdf80", "v", "💰 Ventas"
+    else:
+        df_lista, color, prefix, label = df_cambios, "#5badff", "c", "🔄 Cambios"
 
-    col_v, col_c = st.columns(2)
-    with col_v:
+    st.markdown(
+        f'<p style="color:{color};font-weight:700;font-size:0.8rem;'
+        f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">{label}</p>',
+        unsafe_allow_html=True,
+    )
+
+    if df_lista.empty:
         st.markdown(
-            '<p style="color:#4cdf80;font-weight:700;font-size:0.8rem;'
-            'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">💰 Ventas</p>',
-            unsafe_allow_html=True)
-        if df_ventas.empty:
-            st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">—</span>',
-                        unsafe_allow_html=True)
-        else:
-            render_lista(df_ventas, "#4cdf80", "v")
-    with col_c:
-        st.markdown(
-            '<p style="color:#5badff;font-weight:700;font-size:0.8rem;'
-            'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">🔄 Cambios</p>',
-            unsafe_allow_html=True)
-        if df_cambios.empty:
-            st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">—</span>',
-                        unsafe_allow_html=True)
-        else:
-            render_lista(df_cambios, "#5badff", "c")
+            f'<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin {label.lower()} registradas aún</span>',
+            unsafe_allow_html=True,
+        )
+    else:
+        # Scroll a partir de la entrada 20 (altura fija ~900px ≈ 20 entradas)
+        scroll_h = 900 if len(df_lista) > 20 else None
+        container = st.container(height=scroll_h) if scroll_h else st.container()
+        with container:
+            for i, (_, row) in enumerate(df_lista.iloc[::-1].iterrows()):
+                try:
+                    t = datetime.fromisoformat(str(row["sale_ts"])).strftime("%H:%M")
+                except (ValueError, TypeError):
+                    t = "—"
+
+                # Obtener set_code y cn del catálogo
+                sku = row["internal_sku"]
+                set_info = ""
+                if sku in catalog.index:
+                    cat_row = catalog.loc[sku]
+                    sc = cat_row.get("set_code", "") if hasattr(cat_row, "get") else ""
+                    cn = cat_row.get("cn", "") if hasattr(cat_row, "get") else ""
+                    if sc or cn:
+                        set_info = f" · {sc} {cn}".strip(" ·")
+
+                c1, c2 = st.columns([5, 1])
+                c1.markdown(
+                    f'<div style="border-left:3px solid {color};padding-left:8px;margin-bottom:4px;">'
+                    f'<span style="font-size:0.85rem;font-weight:600;">{row["display_name"]}</span><br>'
+                    f'<span style="font-size:0.7rem;color:var(--prisma-muted);">'
+                    f'{t} · {row["language"]} · {row["business_rarity"]}{set_info}</span></div>',
+                    unsafe_allow_html=True,
+                )
+                if c2.button("✕", key=f"void_{prefix}_{row['sale_event_id']}"):
+                    void_sale(row.to_dict())
+                    st.session_state.last_msg = f"Anulada: {row['display_name']}"
+                    st.session_state.last_ok  = True
+                    st.rerun()
 
 # ─────────────────────────────────────────────
 # E) EXPORTAR CSV DEL DÍA
