@@ -615,7 +615,7 @@ else:
                     sc = cat_row.get("set_code", "") if hasattr(cat_row, "get") else ""
                     cn = cat_row.get("cn", "") if hasattr(cat_row, "get") else ""
                     if sc or cn:
-                        set_info = f" · {sc} {cn}".strip(" ·")
+                        set_info = f" · {sc} {cn}".strip()
 
                 c1, c2 = st.columns([5, 1])
                 c1.markdown(
