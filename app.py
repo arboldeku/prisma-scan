@@ -396,7 +396,7 @@ def register_scan(sku: str) -> tuple[bool, str]:
         "qty":            1,
         "unit_price":     0.0,
         "gross_amount":   0.0,
-        "discount_eur":   float(st.session_state.get("discount_eur_input", 0.0)),
+        "discount_eur":   0.0,
         "channel":        "physical_store",
         "source_system":  "store_scan",
         "status":         "completed",
@@ -461,6 +461,8 @@ if "cambio_direction" not in st.session_state:
     st.session_state.cambio_direction = "pagar"
 if "current_session_id" not in st.session_state:
     st.session_state.current_session_id = str(uuid.uuid4())[:8]
+if "session_discount" not in st.session_state:
+    st.session_state.session_discount = 0.0
 
 # ─────────────────────────────────────────────
 # CATÁLOGO
@@ -570,19 +572,7 @@ else:
             st.session_state.payment_mode = "tarjeta"; st.rerun()
 
 # ─────────────────────────────────────────────
-# B3) DESCUENTO EN EUROS
-# ─────────────────────────────────────────────
-st.number_input(
-    "Descuento (€)",
-    min_value=0.0, max_value=9999.0,
-    value=0.0,
-    step=0.50,
-    format="%.2f",
-    key="discount_eur_input",
-)
-
-# ─────────────────────────────────────────────
-# B4) ENTRADA MANUAL — por si falla una etiqueta
+# B3) ENTRADA MANUAL — por si falla una etiqueta
 # ─────────────────────────────────────────────
 with st.expander("Entrada manual (etiqueta dañada)"):
     # Separar expansiones occidentales y japonesas/coreanas por idioma
@@ -698,25 +688,20 @@ if st.session_state.last_msg:
 # ─────────────────────────────────────────────
 # C2) TICKET DE COMPRA — sesión actual
 # ─────────────────────────────────────────────
-col_tkt, col_new = st.columns([3, 1])
-col_tkt.markdown('<p class="summary-title" style="margin:0.6rem 0 0.2rem 0;">🧾 Ticket actual</p>', unsafe_allow_html=True)
-if col_new.button("➕ Nuevo", key="new_ticket", use_container_width=True):
-    st.session_state.current_session_id = str(uuid.uuid4())[:8]
-    st.rerun()
+st.markdown('<p class="summary-title" style="margin:0.6rem 0 0.2rem 0;">🧾 Ticket actual</p>', unsafe_allow_html=True)
 
 sess_id = st.session_state.current_session_id
 sess_sales = [s for s in st.session_state.sales
               if s.get("session_id") == sess_id and s.get("status") == "completed"]
 
 if not sess_sales:
-    st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin artículos en este ticket — escanea para añadir</span>', unsafe_allow_html=True)
+    st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin artículos — escanea para añadir</span>', unsafe_allow_html=True)
 else:
     df_sess = pd.DataFrame(sess_sales)
     grp_sess = df_sess.groupby(
         ["internal_sku", "display_name", "language", "business_rarity"],
         as_index=False
     )["qty"].sum().sort_values("display_name")
-    disc = df_sess["discount_eur"].astype(float).max() if "discount_eur" in df_sess.columns else 0.0
     for _, row in grp_sess.iterrows():
         st.markdown(
             f'<div style="display:flex;justify-content:space-between;'
@@ -728,12 +713,33 @@ else:
             unsafe_allow_html=True,
         )
     total_u = int(df_sess["qty"].sum())
-    disc_line = f' · <span style="color:var(--prisma-danger);">-{disc:.2f}€ dto.</span>' if disc > 0 else ""
+
+    # Descuento — se pone DESPUÉS de escanear, antes de cerrar el ticket
+    disc_val = st.number_input(
+        "Descuento (€)", min_value=0.0, max_value=9999.0,
+        value=st.session_state.session_discount,
+        step=0.50, format="%.2f", key="session_discount_input",
+        label_visibility="visible",
+    )
+    st.session_state.session_discount = disc_val
+
+    disc_line = f' · <span style="color:var(--prisma-danger);">-{disc_val:.2f}€ dto.</span>' if disc_val > 0 else ""
     st.markdown(
-        f'<div style="margin-top:8px;font-size:0.78rem;color:var(--prisma-muted);text-align:right;">'
+        f'<div style="margin-top:4px;font-size:0.78rem;color:var(--prisma-muted);text-align:right;">'
         f'{total_u} carta(s){disc_line}</div>',
         unsafe_allow_html=True,
     )
+
+# Botón "Nuevo ticket" — estampa el descuento en todos los registros de la sesión y resetea
+if st.button("➕ Nuevo ticket", key="new_ticket", use_container_width=True, type="secondary"):
+    disc_final = st.session_state.session_discount
+    sid = st.session_state.current_session_id
+    for i, s in enumerate(st.session_state.sales):
+        if s.get("session_id") == sid:
+            st.session_state.sales[i]["discount_eur"] = disc_final
+    st.session_state.current_session_id = str(uuid.uuid4())[:8]
+    st.session_state.session_discount = 0.0
+    st.rerun()
 
 # ─────────────────────────────────────────────
 # D) DOS LISTAS: VENTAS | CAMBIOS
