@@ -404,7 +404,7 @@ def register_scan(sku: str) -> tuple[bool, str]:
         "sale_type":      scan_mode,
         "payment_method": payment_method,
         "money_direction": money_direction,
-        "trade_amount":   float(st.session_state.get("cambio_amount", 0.0)) if scan_mode == "cambio" else 0.0,
+        "trade_amount":   float(st.session_state.get("cambio_amount_input") or st.session_state.get("cambio_amount", 0.0)) if scan_mode == "cambio" else 0.0,
     })
     return True, f"{product['display_name']} · {product['language']} · {product['business_rarity']}"
 
@@ -860,7 +860,7 @@ if not df_sales.empty:
     df_void      = df_sales[df_sales["status"] == "void"].copy()
     grp_cols = ["session_id", "internal_sku", "display_name", "language", "business_rarity",
                 "unit_price", "channel", "source_system", "status",
-                "sale_type", "payment_method", "money_direction", "discount_eur"]
+                "sale_type", "payment_method", "money_direction", "trade_amount", "discount_eur"]
     grp_cols = [c for c in grp_cols if c in df_completed.columns]
     if not df_completed.empty:
         df_agg = df_completed.groupby(grp_cols, as_index=False).agg({"qty": "sum", "gross_amount": "sum"})
