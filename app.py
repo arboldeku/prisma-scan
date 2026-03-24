@@ -34,6 +34,7 @@ USE_SHEETS = "gcp_service_account" in st.secrets
 CSV_COLUMNS = [
     "sale_event_id",
     "sale_ts",
+    "session_id",
     "internal_sku",
     "display_name",
     "language",
@@ -41,12 +42,13 @@ CSV_COLUMNS = [
     "qty",
     "unit_price",
     "gross_amount",
+    "discount_eur",
     "channel",
     "source_system",
     "status",
     "sale_type",
     "payment_method",
-    "discount_pct",
+    "money_direction",
 ]
 
 # ─────────────────────────────────────────────
@@ -361,9 +363,20 @@ def register_scan(sku: str) -> tuple[bool, str]:
             return False, f"SKU no encontrado: {sku}"
 
     product = catalog.loc[sku]
+    scan_mode = st.session_state.get("scan_mode", "venta")
+    if scan_mode == "venta":
+        payment_method  = st.session_state.get("payment_mode", "efectivo")
+        money_direction = "ninguno"
+    elif st.session_state.get("cambio_has_money", False):
+        payment_method  = st.session_state.get("payment_mode", "efectivo")
+        money_direction = st.session_state.get("cambio_direction", "pagar")
+    else:
+        payment_method  = "ninguno"
+        money_direction = "ninguno"
     save_sale({
         "sale_event_id":  str(uuid.uuid4()),
         "sale_ts":        datetime.now(TZ_MADRID).isoformat(timespec="seconds"),
+        "session_id":     st.session_state.get("current_session_id", ""),
         "internal_sku":   sku,
         "display_name":   product["display_name"],
         "language":       product["language"],
@@ -371,12 +384,13 @@ def register_scan(sku: str) -> tuple[bool, str]:
         "qty":            1,
         "unit_price":     0.0,
         "gross_amount":   0.0,
+        "discount_eur":   float(st.session_state.get("discount_eur_input", 0.0)),
         "channel":        "physical_store",
         "source_system":  "store_scan",
         "status":         "completed",
-        "sale_type":      st.session_state.get("scan_mode", "venta"),
-        "payment_method": st.session_state.get("payment_mode", "efectivo"),
-        "discount_pct":   st.session_state.get("discount_input", 0),
+        "sale_type":      scan_mode,
+        "payment_method": payment_method,
+        "money_direction": money_direction,
     })
     return True, f"{product['display_name']} · {product['language']} · {product['business_rarity']}"
 
@@ -408,8 +422,10 @@ def void_sale(original: dict) -> None:
         "source_system":  "store_scan",
         "status":         "void",
         "sale_type":      original.get("sale_type", "venta"),
-        "payment_method": original.get("payment_method", "efectivo"),
-        "discount_pct":   original.get("discount_pct", 0),
+        "payment_method": original.get("payment_method", "ninguno"),
+        "money_direction": original.get("money_direction", "ninguno"),
+        "discount_eur":   original.get("discount_eur", 0.0),
+        "session_id":     original.get("session_id", ""),
     })
 
 
@@ -427,6 +443,12 @@ if "scan_mode" not in st.session_state:
     st.session_state.scan_mode = "venta"
 if "payment_mode" not in st.session_state:
     st.session_state.payment_mode = "efectivo"
+if "cambio_has_money" not in st.session_state:
+    st.session_state.cambio_has_money = False
+if "cambio_direction" not in st.session_state:
+    st.session_state.cambio_direction = "pagar"
+if "current_session_id" not in st.session_state:
+    st.session_state.current_session_id = str(uuid.uuid4())[:8]
 
 # ─────────────────────────────────────────────
 # CATÁLOGO
@@ -495,36 +517,56 @@ if col_c.button(
     st.rerun()
 
 # ─────────────────────────────────────────────
-# B2) MÉTODO DE PAGO — sticky (efectivo / tarjeta)
+# B2) PAGO — condicional según modo VENTA / CAMBIO
 # ─────────────────────────────────────────────
-pay = st.session_state.payment_mode
-col_ef, col_tj = st.columns(2)
-if col_ef.button(
-    "💵  EFECTIVO",
-    use_container_width=True,
-    type="primary" if pay == "efectivo" else "secondary",
-    key="mode_efectivo",
-):
-    st.session_state.payment_mode = "efectivo"
-    st.rerun()
-if col_tj.button(
-    "💳  TARJETA",
-    use_container_width=True,
-    type="primary" if pay == "tarjeta" else "secondary",
-    key="mode_tarjeta",
-):
-    st.session_state.payment_mode = "tarjeta"
-    st.rerun()
+if st.session_state.scan_mode == "venta":
+    # VENTA: solo canal de cobro
+    pay = st.session_state.payment_mode
+    col_ef, col_tj = st.columns(2)
+    if col_ef.button("💵  EFECTIVO", use_container_width=True,
+                     type="primary" if pay == "efectivo" else "secondary", key="mode_efectivo"):
+        st.session_state.payment_mode = "efectivo"; st.rerun()
+    if col_tj.button("💳  TARJETA", use_container_width=True,
+                     type="primary" if pay == "tarjeta" else "secondary", key="mode_tarjeta"):
+        st.session_state.payment_mode = "tarjeta"; st.rerun()
+else:
+    # CAMBIO: primero si hay dinero de por medio
+    has_money = st.session_state.cambio_has_money
+    col_dir, col_mon = st.columns(2)
+    if col_dir.button("🔄  DIRECTO", use_container_width=True,
+                      type="secondary" if has_money else "primary", key="cambio_directo"):
+        st.session_state.cambio_has_money = False; st.rerun()
+    if col_mon.button("💸  CON DINERO", use_container_width=True,
+                      type="primary" if has_money else "secondary", key="cambio_dinero"):
+        st.session_state.cambio_has_money = True; st.rerun()
+    if has_money:
+        direction = st.session_state.cambio_direction
+        col_pag, col_rec = st.columns(2)
+        if col_pag.button("📤  A PAGAR", use_container_width=True,
+                          type="primary" if direction == "pagar" else "secondary", key="dir_pagar"):
+            st.session_state.cambio_direction = "pagar"; st.rerun()
+        if col_rec.button("📥  A RECIBIR", use_container_width=True,
+                          type="primary" if direction == "recibir" else "secondary", key="dir_recibir"):
+            st.session_state.cambio_direction = "recibir"; st.rerun()
+        pay = st.session_state.payment_mode
+        col_ef2, col_tj2 = st.columns(2)
+        if col_ef2.button("💵  EFECTIVO", use_container_width=True,
+                          type="primary" if pay == "efectivo" else "secondary", key="mode_efectivo"):
+            st.session_state.payment_mode = "efectivo"; st.rerun()
+        if col_tj2.button("💳  TARJETA", use_container_width=True,
+                          type="primary" if pay == "tarjeta" else "secondary", key="mode_tarjeta"):
+            st.session_state.payment_mode = "tarjeta"; st.rerun()
 
 # ─────────────────────────────────────────────
-# B3) DESCUENTO — se aplica a los siguientes escaneos
+# B3) DESCUENTO EN EUROS
 # ─────────────────────────────────────────────
 st.number_input(
-    "Descuento (%)",
-    min_value=0, max_value=100,
-    value=0,
-    step=5,
-    key="discount_input",
+    "Descuento (€)",
+    min_value=0.0, max_value=9999.0,
+    value=0.0,
+    step=0.50,
+    format="%.2f",
+    key="discount_eur_input",
 )
 
 # ─────────────────────────────────────────────
@@ -590,6 +632,9 @@ with st.expander("Entrada manual (etiqueta dañada)"):
 # ─────────────────────────────────────────────
 with st.expander("🔍 Buscar carta en inventario"):
     cat_r = catalog.reset_index()
+    # Filtrar solo cartas con stock disponible (amount > 0)
+    if "amount" in cat_r.columns:
+        cat_r = cat_r[pd.to_numeric(cat_r["amount"], errors="coerce").fillna(0) > 0]
     search_name = st.text_input("Nombre Pokémon", placeholder="Charizard...", key="search_name")
     s1, s2, s3 = st.columns(3)
     with s1:
@@ -637,36 +682,44 @@ if st.session_state.last_msg:
     )
 
 # ─────────────────────────────────────────────
-# C2) TICKET DE COMPRA
+# C2) TICKET DE COMPRA — sesión actual
 # ─────────────────────────────────────────────
-if st.session_state.sales:
-    with st.expander("🧾 Ticket de compra"):
-        df_ticket = pd.DataFrame(st.session_state.sales)
-        df_ticket = df_ticket[df_ticket["status"] == "completed"]
-        if df_ticket.empty:
-            st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin ventas activas</span>', unsafe_allow_html=True)
-        else:
-            grp = df_ticket.groupby(
-                ["internal_sku", "display_name", "language", "business_rarity"],
-                as_index=False
-            )["qty"].sum().sort_values("display_name")
-            for _, row in grp.iterrows():
-                st.markdown(
-                    f'<div style="display:flex;justify-content:space-between;'
-                    f'padding:5px 0;border-bottom:1px solid var(--prisma-border);">'
-                    f'<span style="font-size:0.82rem;">'
-                    f'<b>{row["display_name"]}</b> '
-                    f'<span style="color:var(--prisma-muted);">· {row["language"]} · {row["business_rarity"]}</span></span>'
-                    f'<span style="font-family:JetBrains Mono,monospace;color:var(--prisma-accent);font-weight:700;">×{int(row["qty"])}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-            total = int(df_ticket["qty"].sum())
-            st.markdown(
-                f'<div style="margin-top:8px;font-size:0.78rem;color:var(--prisma-muted);text-align:right;">'
-                f'Total: <b style="color:var(--prisma-text);">{total} carta(s)</b></div>',
-                unsafe_allow_html=True,
-            )
+col_tkt, col_new = st.columns([3, 1])
+col_tkt.markdown('<p class="summary-title" style="margin:0.6rem 0 0.2rem 0;">🧾 Ticket actual</p>', unsafe_allow_html=True)
+if col_new.button("➕ Nuevo", key="new_ticket", use_container_width=True):
+    st.session_state.current_session_id = str(uuid.uuid4())[:8]
+    st.rerun()
+
+sess_id = st.session_state.current_session_id
+sess_sales = [s for s in st.session_state.sales
+              if s.get("session_id") == sess_id and s.get("status") == "completed"]
+
+if not sess_sales:
+    st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin artículos en este ticket — escanea para añadir</span>', unsafe_allow_html=True)
+else:
+    df_sess = pd.DataFrame(sess_sales)
+    grp_sess = df_sess.groupby(
+        ["internal_sku", "display_name", "language", "business_rarity"],
+        as_index=False
+    )["qty"].sum().sort_values("display_name")
+    disc = df_sess["discount_eur"].astype(float).max() if "discount_eur" in df_sess.columns else 0.0
+    for _, row in grp_sess.iterrows():
+        st.markdown(
+            f'<div style="display:flex;justify-content:space-between;'
+            f'padding:5px 0;border-bottom:1px solid var(--prisma-border);">'
+            f'<span style="font-size:0.82rem;"><b>{row["display_name"]}</b> '
+            f'<span style="color:var(--prisma-muted);">· {row["language"]} · {row["business_rarity"]}</span></span>'
+            f'<span style="font-family:JetBrains Mono,monospace;color:var(--prisma-accent);font-weight:700;">×{int(row["qty"])}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    total_u = int(df_sess["qty"].sum())
+    disc_line = f' · <span style="color:var(--prisma-danger);">-{disc:.2f}€ dto.</span>' if disc > 0 else ""
+    st.markdown(
+        f'<div style="margin-top:8px;font-size:0.78rem;color:var(--prisma-muted);text-align:right;">'
+        f'{total_u} carta(s){disc_line}</div>',
+        unsafe_allow_html=True,
+    )
 
 # ─────────────────────────────────────────────
 # D) DOS LISTAS: VENTAS | CAMBIOS
@@ -769,26 +822,24 @@ else:
 st.markdown("<br>", unsafe_allow_html=True)
 
 if not df_sales.empty:
-    group_export = st.checkbox("Agrupar filas por SKU al exportar", value=False)
-    if group_export:
-        df_completed = df_sales[df_sales["status"] == "completed"].copy()
-        df_void      = df_sales[df_sales["status"] == "void"].copy()
-        grp_cols     = ["internal_sku", "display_name", "language", "business_rarity",
-                        "unit_price", "channel", "source_system", "status",
-                        "sale_type", "payment_method", "discount_pct"]
-        # Solo agrupar columnas que existan
-        grp_cols = [c for c in grp_cols if c in df_completed.columns]
+    df_completed = df_sales[df_sales["status"] == "completed"].copy()
+    df_void      = df_sales[df_sales["status"] == "void"].copy()
+    grp_cols = ["internal_sku", "display_name", "language", "business_rarity",
+                "unit_price", "channel", "source_system", "status",
+                "sale_type", "payment_method", "money_direction", "discount_eur"]
+    grp_cols = [c for c in grp_cols if c in df_completed.columns]
+    if not df_completed.empty:
         df_agg = df_completed.groupby(grp_cols, as_index=False).agg({"qty": "sum", "gross_amount": "sum"})
         df_agg["sale_event_id"] = df_agg["internal_sku"].apply(lambda x: f"{x}-agg")
         df_agg["sale_ts"]       = datetime.now(TZ_MADRID).isoformat(timespec="seconds")
+        df_agg["session_id"]    = "aggregated"
         df_export = pd.concat([df_agg, df_void], ignore_index=True)
-        # Rellenar columnas que falten
-        for col in CSV_COLUMNS:
-            if col not in df_export.columns:
-                df_export[col] = ""
-        df_export = df_export[CSV_COLUMNS]
     else:
-        df_export = df_sales
+        df_export = df_void
+    for col in CSV_COLUMNS:
+        if col not in df_export.columns:
+            df_export[col] = ""
+    df_export = df_export[CSV_COLUMNS]
 
     st.download_button(
         label="📥 Exportar CSV del día",
