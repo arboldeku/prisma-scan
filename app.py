@@ -404,7 +404,7 @@ def register_scan(sku: str) -> tuple[bool, str]:
         "sale_type":      scan_mode,
         "payment_method": payment_method,
         "money_direction": money_direction,
-        "trade_amount":   float(st.session_state.get("cambio_amount_input") or st.session_state.get("cambio_amount", 0.0)) if scan_mode == "cambio" else 0.0,
+        "trade_amount":   0.0,
     })
     return True, f"{product['display_name']} · {product['language']} · {product['business_rarity']}"
 
@@ -466,6 +466,8 @@ if "current_session_id" not in st.session_state:
     st.session_state.current_session_id = str(uuid.uuid4())[:8]
 if "session_discount" not in st.session_state:
     st.session_state.session_discount = 0.0
+if "session_trade_amount" not in st.session_state:
+    st.session_state.session_trade_amount = 0.0
 if "session_discounts" not in st.session_state:
     st.session_state.session_discounts = {}   # {session_id: discount_eur total del ticket}
 if "cambio_amount" not in st.session_state:
@@ -577,12 +579,6 @@ else:
         if col_tj2.button("💳  TARJETA", use_container_width=True,
                           type="primary" if pay == "tarjeta" else "secondary", key="mode_tarjeta"):
             st.session_state.payment_mode = "tarjeta"; st.rerun()
-        amt = st.number_input(
-            "Importe (€)", min_value=0.0, max_value=9999.0,
-            value=st.session_state.cambio_amount,
-            step=0.50, format="%.2f", key="cambio_amount_input",
-        )
-        st.session_state.cambio_amount = amt
 
 # ─────────────────────────────────────────────
 # B3) ENTRADA MANUAL — por si falla una etiqueta
@@ -727,32 +723,58 @@ else:
         )
     total_u = int(df_sess["qty"].sum())
 
-    # Descuento — se pone DESPUÉS de escanear, antes de cerrar el ticket
-    disc_val = st.number_input(
-        "Descuento (€)", min_value=0.0, max_value=9999.0,
-        value=st.session_state.session_discount,
-        step=0.50, format="%.2f", key="session_discount_input",
-        label_visibility="visible",
+    # ¿Hay cambios con dinero en esta sesión?
+    has_cambio_money = any(
+        s.get("sale_type") == "cambio" and s.get("money_direction") in ("pagar", "recibir")
+        for s in sess_sales
     )
-    st.session_state.session_discount = disc_val
 
-    disc_line = f' · <span style="color:var(--prisma-danger);">-{disc_val:.2f}€ dto.</span>' if disc_val > 0 else ""
+    col_i1, col_i2 = st.columns(2)
+    with col_i1:
+        disc_val = st.number_input(
+            "Descuento (€)", min_value=0.0, max_value=9999.0,
+            value=st.session_state.session_discount,
+            step=0.50, format="%.2f", key="session_discount_input",
+        )
+        st.session_state.session_discount = disc_val
+    with col_i2:
+        if has_cambio_money:
+            tamt_val = st.number_input(
+                "Importe cambio (€)", min_value=0.0, max_value=9999.0,
+                value=st.session_state.session_trade_amount,
+                step=0.50, format="%.2f", key="session_trade_input",
+            )
+            st.session_state.session_trade_amount = tamt_val
+        else:
+            tamt_val = 0.0
+
+    extras = []
+    if disc_val > 0:
+        extras.append(f'<span style="color:var(--prisma-danger);">-{disc_val:.2f}€ dto.</span>')
+    if tamt_val > 0:
+        extras.append(f'<span style="color:var(--prisma-info);">{tamt_val:.2f}€ cambio</span>')
     st.markdown(
         f'<div style="margin-top:4px;font-size:0.78rem;color:var(--prisma-muted);text-align:right;">'
-        f'{total_u} carta(s){disc_line}</div>',
+        f'{total_u} carta(s){"  ·  ".join([""] + extras) if extras else ""}</div>',
         unsafe_allow_html=True,
     )
 
-# Botón "Nuevo ticket" — estampa el descuento en todos los registros de la sesión y resetea
+# Botón "Nuevo ticket" — estampa descuento e importe en registros de sesión y resetea
 if st.button("➕ Nuevo ticket", key="new_ticket", use_container_width=True, type="secondary"):
     sid = st.session_state.current_session_id
-    disc_final = st.session_state.session_discount
-    # Guardar descuento del ticket en el dict (no en cada carta individual)
+    disc_final  = st.session_state.session_discount
+    trade_final = st.session_state.session_trade_amount
     if disc_final > 0:
         st.session_state.session_discounts[sid] = disc_final
-    st.session_state.current_session_id = str(uuid.uuid4())[:8]
-    st.session_state.session_discount = 0.0
-    st.session_state.cambio_amount = 0.0
+    # Estampar trade_amount en los registros de cambio con dinero de esta sesión
+    if trade_final > 0:
+        for i, s in enumerate(st.session_state.sales):
+            if (s.get("session_id") == sid
+                    and s.get("money_direction") in ("pagar", "recibir")):
+                st.session_state.sales[i]["trade_amount"] = trade_final
+    st.session_state.current_session_id   = str(uuid.uuid4())[:8]
+    st.session_state.session_discount     = 0.0
+    st.session_state.session_trade_amount = 0.0
     st.rerun()
 
 # ─────────────────────────────────────────────
