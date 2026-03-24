@@ -50,6 +50,7 @@ CSV_COLUMNS = [
     "sale_type",
     "payment_method",
     "money_direction",
+    "trade_amount",
 ]
 
 # ─────────────────────────────────────────────
@@ -403,6 +404,7 @@ def register_scan(sku: str) -> tuple[bool, str]:
         "sale_type":      scan_mode,
         "payment_method": payment_method,
         "money_direction": money_direction,
+        "trade_amount":   float(st.session_state.get("cambio_amount", 0.0)) if scan_mode == "cambio" else 0.0,
     })
     return True, f"{product['display_name']} · {product['language']} · {product['business_rarity']}"
 
@@ -436,6 +438,7 @@ def void_sale(original: dict) -> None:
         "sale_type":      original.get("sale_type", "venta"),
         "payment_method": original.get("payment_method", "ninguno"),
         "money_direction": original.get("money_direction", "ninguno"),
+        "trade_amount":   original.get("trade_amount", 0.0),
         "discount_eur":   original.get("discount_eur", 0.0),
         "session_id":     original.get("session_id", ""),
     })
@@ -463,6 +466,10 @@ if "current_session_id" not in st.session_state:
     st.session_state.current_session_id = str(uuid.uuid4())[:8]
 if "session_discount" not in st.session_state:
     st.session_state.session_discount = 0.0
+if "session_discounts" not in st.session_state:
+    st.session_state.session_discounts = {}   # {session_id: discount_eur total del ticket}
+if "cambio_amount" not in st.session_state:
+    st.session_state.cambio_amount = 0.0
 
 # ─────────────────────────────────────────────
 # CATÁLOGO
@@ -570,6 +577,12 @@ else:
         if col_tj2.button("💳  TARJETA", use_container_width=True,
                           type="primary" if pay == "tarjeta" else "secondary", key="mode_tarjeta"):
             st.session_state.payment_mode = "tarjeta"; st.rerun()
+        amt = st.number_input(
+            "Importe (€)", min_value=0.0, max_value=9999.0,
+            value=st.session_state.cambio_amount,
+            step=0.50, format="%.2f", key="cambio_amount_input",
+        )
+        st.session_state.cambio_amount = amt
 
 # ─────────────────────────────────────────────
 # B3) ENTRADA MANUAL — por si falla una etiqueta
@@ -732,13 +745,14 @@ else:
 
 # Botón "Nuevo ticket" — estampa el descuento en todos los registros de la sesión y resetea
 if st.button("➕ Nuevo ticket", key="new_ticket", use_container_width=True, type="secondary"):
-    disc_final = st.session_state.session_discount
     sid = st.session_state.current_session_id
-    for i, s in enumerate(st.session_state.sales):
-        if s.get("session_id") == sid:
-            st.session_state.sales[i]["discount_eur"] = disc_final
+    disc_final = st.session_state.session_discount
+    # Guardar descuento del ticket en el dict (no en cada carta individual)
+    if disc_final > 0:
+        st.session_state.session_discounts[sid] = disc_final
     st.session_state.current_session_id = str(uuid.uuid4())[:8]
     st.session_state.session_discount = 0.0
+    st.session_state.cambio_amount = 0.0
     st.rerun()
 
 # ─────────────────────────────────────────────
@@ -855,6 +869,19 @@ if not df_sales.empty:
         df_export = pd.concat([df_agg, df_void], ignore_index=True)
     else:
         df_export = df_void
+    # Aplicar descuento por ticket (una sola vez por session_id, no por carta)
+    disc_map = st.session_state.get("session_discounts", {})
+    if disc_map and "session_id" in df_export.columns:
+        df_export = df_export.copy()
+        # Solo la primera fila de cada sesión lleva el descuento
+        seen = set()
+        def _apply_disc(row):
+            sid = row.get("session_id", "")
+            if sid in disc_map and sid not in seen:
+                seen.add(sid)
+                return disc_map[sid]
+            return 0.0
+        df_export["discount_eur"] = df_export.apply(_apply_disc, axis=1)
     for col in CSV_COLUMNS:
         if col not in df_export.columns:
             df_export[col] = ""
