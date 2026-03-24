@@ -320,12 +320,14 @@ def _write_to_sheets(record: dict) -> None:
         sheet = get_sheet()
         # Sincronizar cabecera: añadir columnas que falten sin borrar las existentes
         headers = sheet.row_values(1)
-        for i, col in enumerate(CSV_COLUMNS):
+        for col in CSV_COLUMNS:
             if col not in headers:
                 sheet.update_cell(1, len(headers) + 1, col)
                 headers.append(col)
+        # Escribir valores en el ORDEN DE LA CABECERA del Sheet, no de CSV_COLUMNS.
+        # Esto evita que cambios en el orden de CSV_COLUMNS corrompan columnas existentes.
         sheet.append_row(
-            [record.get(col, "") for col in CSV_COLUMNS],
+            [record.get(h, "") for h in headers],
             value_input_option="RAW",
         )
         st.session_state["sheets_error"] = None
