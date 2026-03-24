@@ -45,6 +45,8 @@ CSV_COLUMNS = [
     "source_system",
     "status",
     "sale_type",
+    "payment_method",
+    "discount_pct",
 ]
 
 # ─────────────────────────────────────────────
@@ -373,6 +375,8 @@ def register_scan(sku: str) -> tuple[bool, str]:
         "source_system":  "store_scan",
         "status":         "completed",
         "sale_type":      st.session_state.get("scan_mode", "venta"),
+        "payment_method": st.session_state.get("payment_mode", "efectivo"),
+        "discount_pct":   st.session_state.get("discount_input", 0),
     })
     return True, f"{product['display_name']} · {product['language']} · {product['business_rarity']}"
 
@@ -404,6 +408,8 @@ def void_sale(original: dict) -> None:
         "source_system":  "store_scan",
         "status":         "void",
         "sale_type":      original.get("sale_type", "venta"),
+        "payment_method": original.get("payment_method", "efectivo"),
+        "discount_pct":   original.get("discount_pct", 0),
     })
 
 
@@ -419,6 +425,8 @@ if "scan_counter" not in st.session_state:
     st.session_state.scan_counter = 0
 if "scan_mode" not in st.session_state:
     st.session_state.scan_mode = "venta"
+if "payment_mode" not in st.session_state:
+    st.session_state.payment_mode = "efectivo"
 
 # ─────────────────────────────────────────────
 # CATÁLOGO
@@ -487,7 +495,40 @@ if col_c.button(
     st.rerun()
 
 # ─────────────────────────────────────────────
-# B2) ENTRADA MANUAL — por si falla una etiqueta
+# B2) MÉTODO DE PAGO — sticky (efectivo / tarjeta)
+# ─────────────────────────────────────────────
+pay = st.session_state.payment_mode
+col_ef, col_tj = st.columns(2)
+if col_ef.button(
+    "💵  EFECTIVO",
+    use_container_width=True,
+    type="primary" if pay == "efectivo" else "secondary",
+    key="mode_efectivo",
+):
+    st.session_state.payment_mode = "efectivo"
+    st.rerun()
+if col_tj.button(
+    "💳  TARJETA",
+    use_container_width=True,
+    type="primary" if pay == "tarjeta" else "secondary",
+    key="mode_tarjeta",
+):
+    st.session_state.payment_mode = "tarjeta"
+    st.rerun()
+
+# ─────────────────────────────────────────────
+# B3) DESCUENTO — se aplica a los siguientes escaneos
+# ─────────────────────────────────────────────
+st.number_input(
+    "Descuento (%)",
+    min_value=0, max_value=100,
+    value=0,
+    step=5,
+    key="discount_input",
+)
+
+# ─────────────────────────────────────────────
+# B4) ENTRADA MANUAL — por si falla una etiqueta
 # ─────────────────────────────────────────────
 with st.expander("Entrada manual (etiqueta dañada)"):
     # Separar expansiones occidentales y japonesas/coreanas por idioma
@@ -545,6 +586,43 @@ with st.expander("Entrada manual (etiqueta dañada)"):
             st.warning("Rellena los tres campos.")
 
 # ─────────────────────────────────────────────
+# B5) BUSCADOR DE INVENTARIO
+# ─────────────────────────────────────────────
+with st.expander("🔍 Buscar carta en inventario"):
+    cat_r = catalog.reset_index()
+    search_name = st.text_input("Nombre Pokémon", placeholder="Charizard...", key="search_name")
+    s1, s2, s3 = st.columns(3)
+    with s1:
+        set_opts = ["Todos"] + sorted(cat_r["set_code"].dropna().unique().tolist())
+        search_set = st.selectbox("Expansión", set_opts, key="search_set")
+    with s2:
+        lang_opts = ["Todos"] + sorted(cat_r["language"].dropna().unique().tolist())
+        search_lang = st.selectbox("Idioma", lang_opts, key="search_lang")
+    with s3:
+        rar_opts = ["Todos"] + sorted(cat_r["business_rarity"].dropna().unique().tolist())
+        search_rar = st.selectbox("Rareza", rar_opts, key="search_rar")
+
+    has_filter = search_name or search_set != "Todos" or search_lang != "Todos" or search_rar != "Todos"
+    if has_filter:
+        mask = pd.Series(True, index=cat_r.index)
+        if search_name:
+            mask &= cat_r["display_name"].str.contains(search_name, case=False, na=False)
+        if search_set != "Todos":
+            mask &= cat_r["set_code"] == search_set
+        if search_lang != "Todos":
+            mask &= cat_r["language"] == search_lang
+        if search_rar != "Todos":
+            mask &= cat_r["business_rarity"] == search_rar
+        res = cat_r[mask][["internal_sku", "display_name", "language", "business_rarity", "set_code", "cn"]]
+        if res.empty:
+            st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin resultados</span>', unsafe_allow_html=True)
+        else:
+            st.dataframe(res.head(100), use_container_width=True, hide_index=True)
+            st.markdown(f'<span style="color:var(--prisma-muted);font-size:0.72rem;">{len(res)} resultado(s)</span>', unsafe_allow_html=True)
+    else:
+        st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Introduce al menos un filtro para buscar</span>', unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
 # C) FEEDBACK DEL ÚLTIMO ESCANEO + ERRORES SHEETS
 # ─────────────────────────────────────────────
 if st.session_state.get("sheets_error"):
@@ -557,6 +635,38 @@ if st.session_state.last_msg:
         f'<div class="alert {css}">{icon} {st.session_state.last_msg}</div>',
         unsafe_allow_html=True,
     )
+
+# ─────────────────────────────────────────────
+# C2) TICKET DE COMPRA
+# ─────────────────────────────────────────────
+if st.session_state.sales:
+    with st.expander("🧾 Ticket de compra"):
+        df_ticket = pd.DataFrame(st.session_state.sales)
+        df_ticket = df_ticket[df_ticket["status"] == "completed"]
+        if df_ticket.empty:
+            st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin ventas activas</span>', unsafe_allow_html=True)
+        else:
+            grp = df_ticket.groupby(
+                ["internal_sku", "display_name", "language", "business_rarity"],
+                as_index=False
+            )["qty"].sum().sort_values("display_name")
+            for _, row in grp.iterrows():
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;'
+                    f'padding:5px 0;border-bottom:1px solid var(--prisma-border);">'
+                    f'<span style="font-size:0.82rem;">'
+                    f'<b>{row["display_name"]}</b> '
+                    f'<span style="color:var(--prisma-muted);">· {row["language"]} · {row["business_rarity"]}</span></span>'
+                    f'<span style="font-family:JetBrains Mono,monospace;color:var(--prisma-accent);font-weight:700;">×{int(row["qty"])}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            total = int(df_ticket["qty"].sum())
+            st.markdown(
+                f'<div style="margin-top:8px;font-size:0.78rem;color:var(--prisma-muted);text-align:right;">'
+                f'Total: <b style="color:var(--prisma-text);">{total} carta(s)</b></div>',
+                unsafe_allow_html=True,
+            )
 
 # ─────────────────────────────────────────────
 # D) DOS LISTAS: VENTAS | CAMBIOS
@@ -659,9 +769,30 @@ else:
 st.markdown("<br>", unsafe_allow_html=True)
 
 if not df_sales.empty:
+    group_export = st.checkbox("Agrupar filas por SKU al exportar", value=False)
+    if group_export:
+        df_completed = df_sales[df_sales["status"] == "completed"].copy()
+        df_void      = df_sales[df_sales["status"] == "void"].copy()
+        grp_cols     = ["internal_sku", "display_name", "language", "business_rarity",
+                        "unit_price", "channel", "source_system", "status",
+                        "sale_type", "payment_method", "discount_pct"]
+        # Solo agrupar columnas que existan
+        grp_cols = [c for c in grp_cols if c in df_completed.columns]
+        df_agg = df_completed.groupby(grp_cols, as_index=False).agg({"qty": "sum", "gross_amount": "sum"})
+        df_agg["sale_event_id"] = df_agg["internal_sku"].apply(lambda x: f"{x}-agg")
+        df_agg["sale_ts"]       = datetime.now(TZ_MADRID).isoformat(timespec="seconds")
+        df_export = pd.concat([df_agg, df_void], ignore_index=True)
+        # Rellenar columnas que falten
+        for col in CSV_COLUMNS:
+            if col not in df_export.columns:
+                df_export[col] = ""
+        df_export = df_export[CSV_COLUMNS]
+    else:
+        df_export = df_sales
+
     st.download_button(
         label="📥 Exportar CSV del día",
-        data=df_sales.to_csv(index=False).encode("utf-8"),
+        data=df_export.to_csv(index=False).encode("utf-8"),
         file_name=DAILY_CSV.name,
         mime="text/csv",
         use_container_width=True,
