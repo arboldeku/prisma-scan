@@ -134,7 +134,7 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 576763-0002,576763,2,Zamazenta V,Celebrations,CEL,018,Ultra Rare,UR,ENG,False
 576791-0001,576791,2,Zekrom,Celebrations,CEL,BLW 114,Ultra Rare,UR,ESP,False
 361405-0001,361405,2,Underground Expedition,Celestial Storm,CES,168,Ultra Rare,UR,ESP,False
-500090-0001,500090,4,Duraludon V,Champion’s Path,CPA,47,Ultra Rare,UR,ESP,False
+500090-0001,500090,2,Duraludon V,Champion’s Path,CPA,47,Ultra Rare,UR,ESP,False
 500215-0002,500215,2,Grapploct V,Champion’s Path,CPA,72,Ultra Rare,UR,ENG,False
 499920-0002,499920,2,Wailord V,Champion’s Path,CPA,13,Ultra Rare,UR,ENG,False
 672378-0001,672378,2,Ice Rider Calyrex VMAX,Chilling Reign,CRE,046,Promo,PROMO,ESP,False
@@ -152,7 +152,7 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 567105-0002,567105,2,Volcanion V,Chilling Reign,CRE,025,Ultra Rare,UR,ENG,False
 567270-0001,567270,2,Volcanion V,Chilling Reign,CRE,162,Ultra Rare,UR,ESP,False
 567133-0002,567133,4,Zeraora V,Chilling Reign,CRE,053,Ultra Rare,UR,ENG,False
-408119-0001,408119,4,Oricorio GX,Cosmic Eclipse,CEC,95,Ultra Rare,UR,ESP,False
+408119-0001,408119,2,Oricorio GX,Cosmic Eclipse,CEC,95,Ultra Rare,UR,ESP,False
 311948-0001,311948,2,Gyarados GX,Crimson Invasion,CIN,101,Ultra Rare,UR,ESP,False
 691939-0001,691939,2,Colress's Experiment,Crown Zenith,CRZ,GG59,Ultra Rare,UR,ESP,False
 691823-0001,691823,6,Duraludon VMAX,Crown Zenith,CRZ,104,Ultra Rare,UR,ESP,False
@@ -161,7 +161,6 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 691839-0001,691839,10,Greedent V,Crown Zenith,CRZ,120,Ultra Rare,UR,ESP,False
 691782-0001,691782,10,Hatterene V,Crown Zenith,CRZ,065,Ultra Rare,UR,ESP,False
 691730-0001,691730,4,Leafeon V,Crown Zenith,CRZ,013,Ultra Rare,UR,ESP,False
-691731-0001,691731,2,Leafeon VSTAR,Crown Zenith,CRZ,014,Ultra Rare,UR,ESP,False
 691768-0001,691768,4,Radiant Charjabug,Crown Zenith,CRZ,051,Ultra Rare,UR,ESP,False
 691945-0001,691945,2,Raihan,Crown Zenith,CRZ,GG65,Ultra Rare,UR,ESP,False
 691921-0001,691921,2,Raikou V,Crown Zenith,CRZ,GG41,Ultra Rare,UR,ESP,False
@@ -173,10 +172,10 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 691740-0001,691740,2,Simisear VSTAR,Crown Zenith,CRZ,023,Ultra Rare,UR,ESP,False
 691835-0001,691835,4,Stoutland V,Crown Zenith,CRZ,116,Ultra Rare,UR,ESP,False
 691817-0002,691817,2,Zamazenta V,Crown Zenith,CRZ,098,Ultra Rare,UR,ENG,False
-691817-0001,691817,8,Zamazenta V,Crown Zenith,CRZ,098,Ultra Rare,UR,ESP,False
-691770-0001,691770,4,Zeraora V,Crown Zenith,CRZ,053,Ultra Rare,UR,ESP,False
+691817-0001,691817,6,Zamazenta V,Crown Zenith,CRZ,098,Ultra Rare,UR,ESP,False
+691770-0001,691770,2,Zeraora V,Crown Zenith,CRZ,053,Ultra Rare,UR,ESP,False
 691771-0002,691771,2,Zeraora VMAX,Crown Zenith,CRZ,054,Ultra Rare,UR,ENG,False
-691772-0001,691772,8,Zeraora VSTAR,Crown Zenith,CRZ,055,Ultra Rare,UR,ESP,False
+691772-0001,691772,4,Zeraora VSTAR,Crown Zenith,CRZ,055,Ultra Rare,UR,ESP,False
 483399-0002,483399,4,Crobat V,Darkness Ablaze,DAA,104,Ultra Rare,UR,ENG,False
 483374-0002,483374,2,Galarian Slowbro V,Darkness Ablaze,DAA,99,Ultra Rare,UR,ENG,False
 483174-0002,483174,4,Vikavolt V,Darkness Ablaze,DAA,60,Ultra Rare,UR,ENG,False
@@ -221,8 +220,10 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 363549-0001,363549,2,Ultra Necrozma GX,Dragon Majesty,DRM,78,Secret Rare,SR,ESP,False
 293475-0001,293475,4,Here Comes Team Rocket!,Evolutions,EVO,113,Secret Rare,SR,ESP,False
 574277-0001,574277,4,Duraludon VMAX,Evolving Skies,EVS,219,Secret Rare,SR,ESP,False
+574267-0002,574267,1,Glaceon VMAX,Evolving Skies,EVS,209,Secret Rare,SR,ENG,False
+574267-0001,574267,1,Glaceon VMAX,Evolving Skies,EVS,209,Secret Rare,SR,ESP,False
 574072-0001,574072,2,Arctovish V,Evolving Skies,EVS,048,Ultra Rare,UR,ESP,False
-574170-0001,574170,4,Duraludon V,Evolving Skies,EVS,122,Ultra Rare,UR,ESP,False
+574170-0001,574170,2,Duraludon V,Evolving Skies,EVS,122,Ultra Rare,UR,ESP,False
 574065-0001,574065,2,Glaceon VMAX,Evolving Skies,EVS,041,Ultra Rare,UR,ESP,False
 574031-0002,574031,2,Leafeon V,Evolving Skies,EVS,007,Ultra Rare,UR,ENG,False
 574131-0001,574131,6,Medicham V,Evolving Skies,EVS,083,Ultra Rare,UR,ESP,False
@@ -237,8 +238,8 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 582953-0001,582953,4,Greedent V,Fusion Strike,FST,217,Ultra Rare,UR,ESP,False
 582989-0002,582989,2,Hoopa V,Fusion Strike,FST,253,Ultra Rare,UR,ENG,False
 582786-0002,582786,2,Tyranitar V,Fusion Strike,FST,158,Ultra Rare,UR,ENG,False
-297482-0002,297482,4,Turtonator GX,Guardians Rising,GRI,18,Ultra Rare,UR,ENG,False
-297507-0001,297507,4,Vikavolt GX,Guardians Rising,GRI,45,Ultra Rare,UR,ESP,False
+297482-0002,297482,2,Turtonator GX,Guardians Rising,GRI,18,Ultra Rare,UR,ENG,False
+297507-0001,297507,2,Vikavolt GX,Guardians Rising,GRI,45,Ultra Rare,UR,ESP,False
 381240-0002,381240,2,Malamar,Hidden Fates,HIF,SV18,Secret Rare,SR,ENG,False
 817227-0002,817227,4,Alcremie ex,Journey Together,JTG,075,Double Rare,RR,ENG,False
 817227-0001,817227,6,Alcremie ex,Journey Together,JTG,075,Double Rare,RR,ESP,False
@@ -338,7 +339,7 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 851215-0001,851215,2,Shedinja,Mega Evolution,MEG,144,Illustration Rare,IR,ESP,False
 851220-0002,851220,4,Shroodle,Mega Evolution,MEG,149,Illustration Rare,IR,ENG,False
 851220-0001,851220,2,Shroodle,Mega Evolution,MEG,149,Illustration Rare,IR,ESP,False
-851207-0001,851207,2,Shuckle,Mega Evolution,MEG,136,Illustration Rare,IR,ESP,False
+851207-0001,851207,4,Shuckle,Mega Evolution,MEG,136,Illustration Rare,IR,ESP,False
 851211-0002,851211,2,Snover,Mega Evolution,MEG,140,Illustration Rare,IR,ENG,False
 851211-0001,851211,8,Snover,Mega Evolution,MEG,140,Illustration Rare,IR,ESP,False
 851222-0001,851222,2,Spearow,Mega Evolution,MEG,151,Illustration Rare,IR,ESP,False
@@ -371,7 +372,7 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 725281-0002,725281,4,Bellibolt,Obsidian Flames,OBF,201,Illustration Rare,IR,ENG,False
 725283-0002,725283,2,Larvitar,Obsidian Flames,OBF,203,Illustration Rare,IR,ENG,False
 725289-0001,725289,2,Lechonk,Obsidian Flames,OBF,209,Illustration Rare,IR,ESP,False
-725310-0001,725310,2,Fire Energy,Obsidian Flames,OBF,230,Secret Rare,SR,ESP,False
+725310-0001,725310,4,Fire Energy,Obsidian Flames,OBF,230,Secret Rare,SR,ESP,False
 725307-0001,725307,4,Poppy,Obsidian Flames,OBF,227,Special Illustration Rare,SAR,ESP,False
 725292-0002,725292,4,Vespiquen ex,Obsidian Flames,OBF,212,Ultra Rare,UR,ENG,False
 715554-0002,715554,2,Bellibolt ex,Paldea Evolved,PAL,079,Double Rare,RR,ENG,False
@@ -628,6 +629,7 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 701130-0002,701130,2,Mimikyu ex,SV Black Star Promos,SVP,004,Promo,PROMO,ENG,False
 701130-0001,701130,2,Mimikyu ex,SV Black Star Promos,SVP,004,Promo,PROMO,ESP,False
 703197-0002,703197,2,Miraidon ex,SV Black Star Promos,SVP,028,Promo,PROMO,ENG,False
+788037-0002,788037,2,Noctowl,SV Black Star Promos,SVP,141,Promo,PROMO,ENG,False
 770948-0002,770948,2,Pecharunt,SV Black Star Promos,SVP,129,Promo,PROMO,ENG,False
 775959-0002,775959,4,Raging Bolt ex,SV Black Star Promos,SVP,145,Promo,PROMO,ENG,False
 836658-0002,836658,2,Reuniclus,SV Black Star Promos,SVP,212,Promo,PROMO,ENG,False
@@ -722,7 +724,7 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 539358-0002,539358,2,Cara Liss,Shining Fates,SHF,67,Ultra Rare,UR,ENG,False
 539068-0002,539068,2,Dhelmise V,Shining Fates,SHF,9,Ultra Rare,UR,ENG,False
 539273-0002,539273,2,Ditto V,Shining Fates,SHF,50,Ultra Rare,UR,ENG,False
-302147-0001,302147,8,Shining Genesect,Shining Legends,SLG,9,Ultra Rare,UR,ESP,False
+302147-0001,302147,4,Shining Genesect,Shining Legends,SLG,9,Ultra Rare,UR,ESP,False
 780933-0002,780933,6,Fezandipiti ex,Shrouded Fable,SFA,038,Double Rare,RR,ENG,False
 780902-0002,780902,12,Kingdra ex,Shrouded Fable,SFA,012,Double Rare,RR,ENG,False
 780932-0002,780932,22,Munkidori ex,Shrouded Fable,SFA,037,Double Rare,RR,ENG,False
@@ -756,7 +758,6 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 682183-0001,682183,4,Regidrago VSTAR,Silver Tempest,SIT,136,Ultra Rare,UR,ESP,False
 682104-0002,682104,12,Regieleki V,Silver Tempest,SIT,057,Ultra Rare,UR,ENG,False
 682104-0001,682104,2,Regieleki V,Silver Tempest,SIT,057,Ultra Rare,UR,ESP,False
-682105-0001,682105,4,Regieleki VMAX,Silver Tempest,SIT,058,Ultra Rare,UR,ESP,False
 682241-0001,682241,2,Serena,Silver Tempest,SIT,193,Ultra Rare,UR,ESP,False
 682047-0002,682047,2,Serperior VSTAR,Silver Tempest,SIT,008,Ultra Rare,UR,ENG,False
 682112-0001,682112,4,Unown V,Silver Tempest,SIT,065,Ultra Rare,UR,ESP,False
@@ -782,7 +783,6 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 785964-0001,785964,6,Orthworm ex,Stellar Crown,SCR,110,Double Rare,RR,ESP,False
 785982-0002,785982,2,Terapagos ex,Stellar Crown,SCR,128,Double Rare,RR,ENG,False
 786001-0001,786001,4,Raboot,Stellar Crown,SCR,147,Illustration Rare,IR,ESP,False
-786002-0001,786002,2,Squirtle,Stellar Crown,SCR,148,Illustration Rare,IR,ESP,False
 786000-0001,786000,2,Turtonator,Stellar Crown,SCR,146,Illustration Rare,IR,ESP,False
 786017-0001,786017,2,Briar,Stellar Crown,SCR,163,Ultra Rare,UR,ESP,False
 786010-0002,786010,4,Hydrapple ex,Stellar Crown,SCR,156,Ultra Rare,UR,ENG,False
@@ -793,7 +793,7 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 786016-0001,786016,2,Orthworm ex,Stellar Crown,SCR,162,Ultra Rare,UR,ESP,False
 278297-0001,278297,2,Drifloon Lv.16,Stormfront,STF,SH1,Secret Rare,SR,ESP,False
 295470-0001,295470,2,Gumshoos GX,Sun & Moon,SUM,157,Secret Rare,SR,ESP,False
-295422-0001,295422,4,Gumshoos GX,Sun & Moon,SUM,110,Ultra Rare,UR,ESP,False
+295422-0001,295422,2,Gumshoos GX,Sun & Moon,SUM,110,Ultra Rare,UR,ESP,False
 794506-0002,794506,4,Alolan Exeggutor ex,Surging Sparks,SSP,133,Double Rare,RR,ENG,False
 794506-0001,794506,2,Alolan Exeggutor ex,Surging Sparks,SSP,133,Double Rare,RR,ESP,False
 794503-0002,794503,8,Archaludon ex,Surging Sparks,SSP,130,Double Rare,RR,ENG,False
@@ -828,7 +828,7 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 794568-0001,794568,2,Castform Sunny Form,Surging Sparks,SSP,195,Illustration Rare,IR,ESP,False
 794574-0002,794574,6,Cetitan,Surging Sparks,SSP,201,Illustration Rare,IR,ENG,False
 794571-0001,794571,2,Feebas,Surging Sparks,SSP,198,Illustration Rare,IR,ESP,False
-794583-0002,794583,2,Flapple,Surging Sparks,SSP,210,Illustration Rare,IR,ENG,False
+794583-0002,794583,4,Flapple,Surging Sparks,SSP,210,Illustration Rare,IR,ENG,False
 794583-0001,794583,2,Flapple,Surging Sparks,SSP,210,Illustration Rare,IR,ESP,False
 794569-0002,794569,4,Larvesta,Surging Sparks,SSP,196,Illustration Rare,IR,ENG,False
 794577-0001,794577,2,Mesprit,Surging Sparks,SSP,204,Illustration Rare,IR,ESP,False
@@ -926,13 +926,12 @@ internal_sku,cardmarket_id,qty,card_name,set_name,set_code,cn,rarity,rarity_shor
 769376-0001,769376,2,Bloodmoon Ursaluna ex,Twilight Masquerade,TWM,202,Ultra Rare,UR,ESP,False
 769377-0002,769377,2,Caretaker,Twilight Masquerade,TWM,203,Ultra Rare,UR,ENG,False
 769377-0001,769377,2,Caretaker,Twilight Masquerade,TWM,203,Ultra Rare,UR,ESP,False
-769381-0001,769381,2,Lana's Aid,Twilight Masquerade,TWM,207,Ultra Rare,UR,ESP,False
 769382-0002,769382,2,Lucian,Twilight Masquerade,TWM,208,Ultra Rare,UR,ENG,False
 769365-0001,769365,2,Magcargo ex,Twilight Masquerade,TWM,191,Ultra Rare,UR,ESP,False
 769367-0002,769367,2,Palafin ex,Twilight Masquerade,TWM,193,Ultra Rare,UR,ENG,False
 769363-0002,769363,4,Sinistcha ex,Twilight Masquerade,TWM,189,Ultra Rare,UR,ENG,False
 316090-0001,316090,2,Crushing Hammer,Ultra Prism,UPR,166,Secret Rare,SR,ESP,False
-315828-0001,315828,4,Dawn Wings Necrozma GX,Ultra Prism,UPR,63,Ultra Rare,UR,ESP,False
+315828-0001,315828,2,Dawn Wings Necrozma GX,Ultra Prism,UPR,63,Ultra Rare,UR,ESP,False
 316078-0001,316078,2,Mars,Ultra Prism,UPR,154,Ultra Rare,UR,ESP,False
 279251-0001,279251,2,Suicune & Entei LEGEND,Unleashed,UL,95,Ultra Rare,UR,ESP,False
 687796-0001,687796,1,Hisuian Zoroark VSTAR,VSTAR Universe,s12a,234,Special Illustration Rare,SAR,JPN,False

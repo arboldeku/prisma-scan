@@ -24,7 +24,8 @@ _scanner_input = components.declare_component("scanner_input", path=str(_SCANNER
 # ─────────────────────────────────────────────
 # CONSTANTES
 # ─────────────────────────────────────────────
-CATALOG_PATH = Path("data/hits_catalog.csv")
+CATALOG_PATH  = Path("data/hits_catalog.csv")
+STORE_CATALOG = Path("data/store_hits_catalog.csv")
 SALES_DIR    = Path("sales_output")
 TODAY        = datetime.now(TZ_MADRID).strftime("%Y-%m-%d")
 DAILY_CSV    = SALES_DIR / f"sales_physical_scan_{TODAY}.csv"
@@ -265,6 +266,15 @@ def get_sheet():
 # ─────────────────────────────────────────────
 # FUNCIONES DE DATOS
 # ─────────────────────────────────────────────
+@st.cache_data
+def load_store_inventory() -> pd.DataFrame:
+    """Carga el inventario real de la tienda (store_hits_catalog.csv)."""
+    if not STORE_CATALOG.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(STORE_CATALOG, dtype=str)
+    return df
+
+
 @st.cache_data
 def load_catalog() -> pd.DataFrame:
     """Carga el catálogo operativo desde disco. Se cachea en sesión."""
@@ -631,41 +641,43 @@ with st.expander("Entrada manual (etiqueta dañada)"):
 # B5) BUSCADOR DE INVENTARIO
 # ─────────────────────────────────────────────
 with st.expander("🔍 Buscar carta en inventario"):
-    cat_r = catalog.reset_index()
-    # Filtrar solo cartas con stock disponible (amount > 0)
-    if "amount" in cat_r.columns:
-        cat_r = cat_r[pd.to_numeric(cat_r["amount"], errors="coerce").fillna(0) > 0]
-    search_name = st.text_input("Nombre Pokémon", placeholder="Charizard...", key="search_name")
-    s1, s2, s3 = st.columns(3)
-    with s1:
-        set_opts = ["Todos"] + sorted(cat_r["set_code"].dropna().unique().tolist())
-        search_set = st.selectbox("Expansión", set_opts, key="search_set")
-    with s2:
-        lang_opts = ["Todos"] + sorted(cat_r["language"].dropna().unique().tolist())
-        search_lang = st.selectbox("Idioma", lang_opts, key="search_lang")
-    with s3:
-        rar_opts = ["Todos"] + sorted(cat_r["business_rarity"].dropna().unique().tolist())
-        search_rar = st.selectbox("Rareza", rar_opts, key="search_rar")
-
-    has_filter = search_name or search_set != "Todos" or search_lang != "Todos" or search_rar != "Todos"
-    if has_filter:
-        mask = pd.Series(True, index=cat_r.index)
-        if search_name:
-            mask &= cat_r["display_name"].str.contains(search_name, case=False, na=False)
-        if search_set != "Todos":
-            mask &= cat_r["set_code"] == search_set
-        if search_lang != "Todos":
-            mask &= cat_r["language"] == search_lang
-        if search_rar != "Todos":
-            mask &= cat_r["business_rarity"] == search_rar
-        res = cat_r[mask][["internal_sku", "display_name", "language", "business_rarity", "set_code", "cn"]]
-        if res.empty:
-            st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin resultados</span>', unsafe_allow_html=True)
-        else:
-            st.dataframe(res.head(100), use_container_width=True, hide_index=True)
-            st.markdown(f'<span style="color:var(--prisma-muted);font-size:0.72rem;">{len(res)} resultado(s)</span>', unsafe_allow_html=True)
+    inv = load_store_inventory()
+    if inv.empty:
+        st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">store_hits_catalog.csv no encontrado</span>', unsafe_allow_html=True)
     else:
-        st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Introduce al menos un filtro para buscar</span>', unsafe_allow_html=True)
+        search_name = st.text_input("Nombre Pokémon", placeholder="Snorlax...", key="search_name")
+        s1, s2, s3 = st.columns(3)
+        with s1:
+            set_opts = ["Todas"] + sorted(inv["set_name"].dropna().unique().tolist())
+            search_set = st.selectbox("Expansión", set_opts, key="search_set")
+        with s2:
+            lang_opts = ["Todos"] + sorted(inv["lang"].dropna().unique().tolist())
+            search_lang = st.selectbox("Idioma", lang_opts, key="search_lang")
+        with s3:
+            rar_opts = ["Todas"] + sorted(inv["rarity"].dropna().unique().tolist())
+            search_rar = st.selectbox("Rareza", rar_opts, key="search_rar")
+
+        has_filter = search_name or search_set != "Todas" or search_lang != "Todos" or search_rar != "Todas"
+        if has_filter:
+            mask = pd.Series(True, index=inv.index)
+            if search_name:
+                mask &= inv["card_name"].str.contains(search_name, case=False, na=False)
+            if search_set != "Todas":
+                mask &= inv["set_name"] == search_set
+            if search_lang != "Todos":
+                mask &= inv["lang"] == search_lang
+            if search_rar != "Todas":
+                mask &= inv["rarity"] == search_rar
+            res = inv[mask][["internal_sku", "card_name", "lang", "rarity", "set_name", "cn"]].rename(columns={
+                "card_name": "nombre", "lang": "idioma", "rarity": "rareza", "set_name": "expansión",
+            })
+            if res.empty:
+                st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin resultados</span>', unsafe_allow_html=True)
+            else:
+                st.dataframe(res.head(100), use_container_width=True, hide_index=True)
+                st.markdown(f'<span style="color:var(--prisma-muted);font-size:0.72rem;">{len(res)} resultado(s)</span>', unsafe_allow_html=True)
+        else:
+            st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Introduce al menos un filtro para buscar</span>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # C) FEEDBACK DEL ÚLTIMO ESCANEO + ERRORES SHEETS
