@@ -824,15 +824,14 @@ st.markdown("<br>", unsafe_allow_html=True)
 if not df_sales.empty:
     df_completed = df_sales[df_sales["status"] == "completed"].copy()
     df_void      = df_sales[df_sales["status"] == "void"].copy()
-    grp_cols = ["internal_sku", "display_name", "language", "business_rarity",
+    grp_cols = ["session_id", "internal_sku", "display_name", "language", "business_rarity",
                 "unit_price", "channel", "source_system", "status",
                 "sale_type", "payment_method", "money_direction", "discount_eur"]
     grp_cols = [c for c in grp_cols if c in df_completed.columns]
     if not df_completed.empty:
         df_agg = df_completed.groupby(grp_cols, as_index=False).agg({"qty": "sum", "gross_amount": "sum"})
-        df_agg["sale_event_id"] = df_agg["internal_sku"].apply(lambda x: f"{x}-agg")
+        df_agg["sale_event_id"] = df_agg["session_id"] + "-" + df_agg["internal_sku"]
         df_agg["sale_ts"]       = datetime.now(TZ_MADRID).isoformat(timespec="seconds")
-        df_agg["session_id"]    = "aggregated"
         df_export = pd.concat([df_agg, df_void], ignore_index=True)
     else:
         df_export = df_void
