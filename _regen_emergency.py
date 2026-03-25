@@ -122,23 +122,49 @@ def draw_label(c: canvas.Canvas, data: dict):
     c.restoreState()
 
 
+def _cn_sort_key(entry: dict) -> tuple:
+    """Sort key: (cardmarket_id numeric for set order, cn numeric, lang)."""
+    sku = entry["sku"]
+    # Extract cardmarket_id from SKU prefix (e.g. "733601-0002" → 733601)
+    try:
+        cm_id = int(sku.split("-")[0])
+    except (ValueError, IndexError):
+        try:
+            cm_id = int(sku)
+        except ValueError:
+            cm_id = 999999
+    # Extract numeric part of cn (e.g. "065/165" → 65, "TG01" → 1)
+    import re as _re
+    m = _re.search(r"(\d+)", entry["cn"])
+    cn_num = int(m.group(1)) if m else 9999
+    return (cm_id, cn_num, entry["lang"])
+
+
 def build_labels_from_csv(csv_path: Path, catalog: dict) -> list:
-    labels = []
+    rows_list = []
     with open(csv_path, encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             lang = LANG_MAP.get(row["language"], row["language"])
             qty  = int(row["quantity"])
             key  = (row["cardmarketId"], lang)
             sku  = catalog.get(key, row["cardmarketId"])
-            entry = {
+            rows_list.append({
                 "sku":  sku,
                 "name": row["name"],
                 "lang": lang,
                 "set":  row["setCode"].upper(),
                 "cn":   row["cn"],
-            }
-            for _ in range(qty):
-                labels.append(entry)
+                "_qty": qty,
+            })
+
+    # Sort by set (approx chronological via cardmarket_id) → cn numeric → lang
+    rows_list.sort(key=_cn_sort_key)
+
+    labels = []
+    for entry in rows_list:
+        qty = entry.pop("_qty")
+        for _ in range(qty):
+            labels.append(dict(entry))
     return labels
 
 
