@@ -310,22 +310,28 @@ def load_catalog() -> pd.DataFrame:
             if rows:
                 # Enrich with card details from dim_variant + dim_product
                 inv = pd.DataFrame(rows, dtype=str)
-                # Fetch dim_variant for lang + is_reverse
+                # Fetch dim_variant for lang + is_reverse (up to 50k rows)
                 dv = pd.DataFrame(
                     sb.table("dim_variant")
                     .select("internal_sku, cardmarket_id, lang, is_reverse")
+                    .limit(50000)
                     .execute()
-                    .data,
+                    .data or [],
                     dtype=str,
                 )
-                # Fetch dim_product for card_name, rarity, set info
+                # Fetch dim_product for card_name, rarity, set info (up to 50k rows)
                 dp = pd.DataFrame(
                     sb.table("dim_product")
                     .select("cardmarket_id, card_name, set_code, set_name, cn, rarity")
+                    .limit(50000)
                     .execute()
-                    .data,
+                    .data or [],
                     dtype=str,
                 )
+                if dv.empty or "internal_sku" not in dv.columns:
+                    dv = pd.DataFrame(columns=["internal_sku", "cardmarket_id", "lang", "is_reverse"])
+                if dp.empty or "cardmarket_id" not in dp.columns:
+                    dp = pd.DataFrame(columns=["cardmarket_id", "card_name", "set_code", "set_name", "cn", "rarity"])
                 df = inv.merge(dv, on="internal_sku", how="left", suffixes=("", "_dv"))
                 # Use cardmarket_id from inv if dv didn't add one
                 if "cardmarket_id_dv" in df.columns:
