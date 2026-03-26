@@ -30,7 +30,8 @@ SALES_DIR    = Path("sales_output")
 TODAY        = datetime.now(TZ_MADRID).strftime("%Y-%m-%d")
 DAILY_CSV    = SALES_DIR / f"sales_physical_scan_{TODAY}.csv"
 
-USE_SHEETS = "gcp_service_account" in st.secrets
+USE_SHEETS    = "gcp_service_account" in st.secrets
+USE_SUPABASE  = "supabase" in st.secrets
 
 CSV_COLUMNS = [
     "sale_event_id",
@@ -245,6 +246,21 @@ iframe[title="scanner_input"] {
 )
 
 # ─────────────────────────────────────────────
+# SUPABASE — conexión
+# ─────────────────────────────────────────────
+@st.cache_resource
+def get_supabase():
+    """Devuelve cliente Supabase o None si no está configurado."""
+    if not USE_SUPABASE:
+        return None
+    from supabase import create_client
+    return create_client(
+        st.secrets["supabase"]["url"],
+        st.secrets["supabase"]["anon_key"],
+    )
+
+
+# ─────────────────────────────────────────────
 # GOOGLE SHEETS — conexión
 # ─────────────────────────────────────────────
 @st.cache_resource
@@ -276,9 +292,57 @@ def load_store_inventory() -> pd.DataFrame:
     return df
 
 
-@st.cache_data
+@st.cache_data(ttl=300)
 def load_catalog() -> pd.DataFrame:
-    """Carga el catálogo operativo desde disco. Se cachea en sesión."""
+    """Carga el catálogo operativo.
+    Fuente primaria: Supabase inventory_current (qty >= 0 para incluir también agotados).
+    Fallback: hits_catalog.csv local.
+    """
+    sb = get_supabase()
+    if sb is not None:
+        try:
+            resp = (
+                sb.table("inventory_current")
+                .select("internal_sku, cardmarket_id, qty, last_updated")
+                .execute()
+            )
+            rows = resp.data
+            if rows:
+                # Enrich with card details from dim_variant + dim_product
+                inv = pd.DataFrame(rows, dtype=str)
+                # Fetch dim_variant for lang + is_reverse
+                dv = pd.DataFrame(
+                    sb.table("dim_variant")
+                    .select("internal_sku, cardmarket_id, lang, is_reverse")
+                    .execute()
+                    .data,
+                    dtype=str,
+                )
+                # Fetch dim_product for card_name, rarity, set info
+                dp = pd.DataFrame(
+                    sb.table("dim_product")
+                    .select("cardmarket_id, card_name, set_code, set_name, cn, rarity")
+                    .execute()
+                    .data,
+                    dtype=str,
+                )
+                df = inv.merge(dv, on="internal_sku", how="left", suffixes=("", "_dv"))
+                # Use cardmarket_id from inv if dv didn't add one
+                if "cardmarket_id_dv" in df.columns:
+                    df["cardmarket_id"] = df["cardmarket_id"].fillna(df["cardmarket_id_dv"])
+                    df.drop(columns=["cardmarket_id_dv"], inplace=True)
+                df = df.merge(dp, on="cardmarket_id", how="left")
+                df = df.rename(columns={
+                    "card_name": "display_name",
+                    "lang":      "language",
+                    "rarity":    "business_rarity",
+                })
+                df = df.set_index("internal_sku")
+                return df
+        except Exception as e:
+            st.warning(f"Supabase no disponible, usando catálogo local: {e}")
+
+    # Fallback: CSV local
     if not CATALOG_PATH.exists():
         st.error(f"Catálogo no encontrado en `{CATALOG_PATH}`.")
         st.stop()
@@ -296,7 +360,30 @@ def load_daily_sales() -> pd.DataFrame:
     """
     Lee las ventas del día actual.
     Sin cache para detectar cambios al instante.
+    Fuente primaria: Supabase scan_events. Fallback: Sheets/CSV.
     """
+    if USE_SUPABASE:
+        try:
+            sb = get_supabase()
+            if sb is not None:
+                resp = (
+                    sb.table("scan_events")
+                    .select("*")
+                    .gte("sale_ts", TODAY)
+                    .execute()
+                )
+                rows = resp.data
+                if not rows:
+                    return pd.DataFrame(columns=CSV_COLUMNS)
+                df = pd.DataFrame(rows)
+                for col in CSV_COLUMNS:
+                    if col not in df.columns:
+                        df[col] = ""
+                df["internal_sku"] = df["internal_sku"].astype(str)
+                return df[CSV_COLUMNS]
+        except Exception:
+            pass
+
     if USE_SHEETS:
         sheet   = get_sheet()
         records = sheet.get_all_records()
@@ -346,14 +433,29 @@ def _write_to_csv(record: dict) -> None:
         pass
 
 
+def _write_to_supabase(record: dict) -> None:
+    """Escribe una venta en Supabase scan_events."""
+    try:
+        sb = get_supabase()
+        if sb is None:
+            return
+        row = {k: (None if v == "" else v) for k, v in record.items()}
+        sb.table("scan_events").insert(row).execute()
+        st.session_state["supabase_error"] = None
+    except Exception as e:
+        st.session_state["supabase_error"] = str(e)
+
+
 def save_sale(record: dict) -> None:
     """
-    Persiste una venta en dos pasos:
+    Persiste una venta:
       1. Añade a session_state.sales → UI actualizada al instante.
-      2. Escribe en Sheets/CSV de forma síncrona → garantiza persistencia al cerrar navegador.
+      2. Escribe en Supabase (primario) o Sheets/CSV (fallback).
     """
     st.session_state.sales.append(record)
-    if USE_SHEETS:
+    if USE_SUPABASE:
+        _write_to_supabase(record)
+    elif USE_SHEETS:
         _write_to_sheets(record)
     else:
         _write_to_csv(record)
