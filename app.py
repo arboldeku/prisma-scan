@@ -14,12 +14,7 @@ TZ_MADRID = ZoneInfo("Europe/Madrid")
 import gspread
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from google.oauth2.service_account import Credentials
-
-# Componente custom de escaneo (detecta velocidad de escáner sin depender de Enter)
-_SCANNER_DIR = Path(__file__).parent / "_scanner_component"
-_scanner_input = components.declare_component("scanner_input", path=str(_SCANNER_DIR))
 
 # ─────────────────────────────────────────────
 # CONSTANTES
@@ -227,12 +222,6 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
 }
 [data-testid="stHorizontalBlock"] .stButton > button[kind="secondary"]:hover {
     background: rgba(240,64,96,0.15) !important;
-}
-
-/* iframe del componente de escaneo — sin bordes ni scroll */
-iframe[title="scanner_input"] {
-    border: none !important;
-    display: block !important;
 }
 
 /* Tabla: eliminar gaps entre filas de st.columns */
@@ -606,16 +595,18 @@ st.markdown(
 )
 
 # ─────────────────────────────────────────────
-# B) COMPONENTE DE ESCANEO
+# B) INPUT DE ESCANEO
 #
-# Componente custom con JS propio. Detecta la velocidad de tecleo:
-#   - Escáner: ~5-15 ms entre caracteres → dispara solo al terminar
-#   - Humano: >80 ms → dispara tras 180 ms de inactividad
-# No depende del Enter ni del blur del navegador.
-# La key cambia con scan_counter para que el componente se reinicie
-# tras cada scan exitoso (limpia el valor en session_state).
+# st.text_input estándar — compatible con Streamlit Cloud.
+# Los escáneres de barcode envían Enter automáticamente al terminar.
+# La key cambia con scan_counter para limpiar el campo tras cada scan.
 # ─────────────────────────────────────────────
-scanned = _scanner_input(key=f"scanner_{st.session_state.scan_counter}")
+scanned = st.text_input(
+    "",
+    placeholder="Apunta el escáner y dispara...",
+    key=f"scanner_{st.session_state.scan_counter}",
+    label_visibility="collapsed",
+)
 
 if scanned:
     sku = str(scanned).strip().upper().replace("/", "-")
