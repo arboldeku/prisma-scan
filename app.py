@@ -980,13 +980,62 @@ else:
                     st.rerun()
 
 # ─────────────────────────────────────────────
-# E) EXPORTAR CSV DEL DÍA
+# E) CERRAR CAJA
 # ─────────────────────────────────────────────
 st.markdown("<br>", unsafe_allow_html=True)
+st.markdown(
+    '<p style="font-family:\'JetBrains Mono\',monospace;font-size:0.75rem;'
+    'letter-spacing:0.12em;color:var(--prisma-muted);text-transform:uppercase;'
+    'margin-bottom:0.5rem;">CERRAR CAJA</p>',
+    unsafe_allow_html=True,
+)
 
 if not df_sales.empty:
     df_completed = df_sales[df_sales["status"] == "completed"].copy()
     df_void      = df_sales[df_sales["status"] == "void"].copy()
+
+    # ── Resumen de sesión ──────────────────────────────────────────────
+    if not df_completed.empty:
+        _qty_total   = pd.to_numeric(df_completed.get("qty", 0), errors="coerce").fillna(0).sum()
+        _gross_total = pd.to_numeric(df_completed.get("gross_amount", 0), errors="coerce").fillna(0).sum()
+        _disc_total  = pd.to_numeric(df_completed.get("discount_eur", 0), errors="coerce").fillna(0).sum()
+        _net_total   = _gross_total - _disc_total
+
+        # Desglose por método de pago
+        _pm = df_completed.copy()
+        _pm["gross_amount"] = pd.to_numeric(_pm.get("gross_amount", 0), errors="coerce").fillna(0)
+        _efect = _pm[_pm.get("payment_method", pd.Series()) == "efectivo"]["gross_amount"].sum() if "payment_method" in _pm.columns else 0.0
+        _tarj  = _pm[_pm.get("payment_method", pd.Series()) == "tarjeta"]["gross_amount"].sum()  if "payment_method" in _pm.columns else 0.0
+
+        # Cambios (trades)
+        _cambios = _pm[_pm.get("money_direction", pd.Series()) == "cambio"]["gross_amount"].sum() if "money_direction" in _pm.columns else 0.0
+
+        st.markdown(
+            f"""<div style="background:var(--prisma-surface);border:1px solid var(--prisma-border);
+            border-radius:12px;padding:1rem 1.2rem;margin-bottom:1rem;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;">
+                <span style="color:var(--prisma-muted);font-size:0.8rem;">Cartas vendidas</span>
+                <span style="font-weight:700;font-size:0.9rem;">{int(_qty_total)} uds</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;">
+                <span style="color:var(--prisma-muted);font-size:0.8rem;">Total bruto</span>
+                <span style="font-weight:700;font-size:0.9rem;">{_gross_total:.2f} €</span>
+            </div>
+            {'<div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;"><span style="color:var(--prisma-muted);font-size:0.8rem;">Descuentos</span><span style="color:#f04060;font-size:0.9rem;">−{_disc_total:.2f} €</span></div>' if _disc_total > 0 else ''}
+            <div style="border-top:1px solid var(--prisma-border);margin:0.5rem 0;"></div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;">
+                <span style="color:var(--prisma-accent);font-size:0.9rem;font-weight:700;">NETO</span>
+                <span style="color:var(--prisma-accent);font-weight:700;font-size:1rem;">{_net_total:.2f} €</span>
+            </div>
+            <div style="display:flex;gap:1rem;margin-top:0.4rem;">
+                <span style="font-size:0.75rem;color:var(--prisma-muted);">💵 Efectivo: <b>{_efect:.2f} €</b></span>
+                <span style="font-size:0.75rem;color:var(--prisma-muted);">💳 Tarjeta: <b>{_tarj:.2f} €</b></span>
+                {'<span style="font-size:0.75rem;color:var(--prisma-muted);">🔄 Cambios: <b>' + f"{_cambios:.2f} €</b></span>" if _cambios > 0 else ''}
+            </div></div>""",
+            unsafe_allow_html=True,
+        )
+
+    # ── Preparar CSV VSA ──────────────────────────────────────────────
     grp_cols = ["session_id", "internal_sku", "display_name", "language", "business_rarity",
                 "unit_price", "channel", "source_system", "status",
                 "sale_type", "payment_method", "money_direction", "trade_amount", "discount_eur"]
@@ -998,11 +1047,11 @@ if not df_sales.empty:
         df_export = pd.concat([df_agg, df_void], ignore_index=True)
     else:
         df_export = df_void
-    # Aplicar descuento por ticket (una sola vez por session_id, no por carta)
+
+    # Aplicar descuento por ticket (una sola vez por session_id)
     disc_map = st.session_state.get("session_discounts", {})
     if disc_map and "session_id" in df_export.columns:
         df_export = df_export.copy()
-        # Solo la primera fila de cada sesión lleva el descuento
         seen = set()
         def _apply_disc(row):
             sid = row.get("session_id", "")
@@ -1011,27 +1060,30 @@ if not df_sales.empty:
                 return disc_map[sid]
             return 0.0
         df_export["discount_eur"] = df_export.apply(_apply_disc, axis=1)
+
     for col in CSV_COLUMNS:
         if col not in df_export.columns:
             df_export[col] = ""
     df_export = df_export[CSV_COLUMNS]
 
+    vsa_filename = f"VSA_{TODAY}.csv"
     st.download_button(
-        label="📥 Exportar CSV del día",
+        label="🔒  CERRAR CAJA — Descargar VSA",
         data=df_export.to_csv(index=False).encode("utf-8"),
-        file_name=DAILY_CSV.name,
+        file_name=vsa_filename,
         mime="text/csv",
         use_container_width=True,
+        type="primary",
     )
     st.markdown(
-        '<p style="font-size:0.72rem;color:var(--prisma-muted);text-align:center;">'
-        "Descarga el CSV y súbelo a Drive para que entre al pipeline Bronze.</p>",
+        f'<p style="font-size:0.72rem;color:var(--prisma-muted);text-align:center;">'
+        f'Genera <code>{vsa_filename}</code> · Súbelo a Drive → Sant Antoni/ para el pipeline.</p>',
         unsafe_allow_html=True,
     )
 else:
     st.markdown(
         '<p style="font-size:0.78rem;color:var(--prisma-muted);text-align:center;">'
-        "El CSV estará disponible cuando haya al menos una venta.</p>",
+        "Sin ventas registradas hoy — el botón aparecerá al cerrar el primer ticket.</p>",
         unsafe_allow_html=True,
     )
 
