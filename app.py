@@ -295,7 +295,10 @@ def load_store_inventory() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def load_catalog() -> pd.DataFrame:
     """Carga el catálogo operativo.
-    Fuente primaria: Supabase inventory_current (qty >= 0 para incluir también agotados).
+
+    Fuente primaria: Supabase inventory_current — tabla única, ya enriquecida con
+    todos los campos de catálogo (card_name, lang, is_reverse, rarity, etc.).
+    Sin joins adicionales: elimina puntos de fallo y es más rápido.
     Fallback: hits_catalog.csv local.
     """
     sb = get_supabase()
@@ -303,41 +306,17 @@ def load_catalog() -> pd.DataFrame:
         try:
             resp = (
                 sb.table("inventory_current")
-                .select("internal_sku, cardmarket_id, qty, last_updated")
+                .select(
+                    "internal_sku, cardmarket_id, qty, last_updated,"
+                    "card_name, set_code, set_name, cn, rarity,"
+                    "lang, is_reverse, condition, listed_price_eur, name_es"
+                )
+                .limit(50000)
                 .execute()
             )
             rows = resp.data
             if rows:
-                # Enrich with card details from dim_variant + dim_product
-                inv = pd.DataFrame(rows, dtype=str)
-                # Fetch dim_variant for lang + is_reverse (up to 50k rows)
-                dv = pd.DataFrame(
-                    sb.table("dim_variant")
-                    .select("internal_sku, cardmarket_id, lang, is_reverse")
-                    .limit(50000)
-                    .execute()
-                    .data or [],
-                    dtype=str,
-                )
-                # Fetch dim_product for card_name, rarity, set info (up to 50k rows)
-                dp = pd.DataFrame(
-                    sb.table("dim_product")
-                    .select("cardmarket_id, card_name, set_code, set_name, cn, rarity")
-                    .limit(50000)
-                    .execute()
-                    .data or [],
-                    dtype=str,
-                )
-                if dv.empty or "internal_sku" not in dv.columns:
-                    dv = pd.DataFrame(columns=["internal_sku", "cardmarket_id", "lang", "is_reverse"])
-                if dp.empty or "cardmarket_id" not in dp.columns:
-                    dp = pd.DataFrame(columns=["cardmarket_id", "card_name", "set_code", "set_name", "cn", "rarity"])
-                df = inv.merge(dv, on="internal_sku", how="left", suffixes=("", "_dv"))
-                # Use cardmarket_id from inv if dv didn't add one
-                if "cardmarket_id_dv" in df.columns:
-                    df["cardmarket_id"] = df["cardmarket_id"].fillna(df["cardmarket_id_dv"])
-                    df.drop(columns=["cardmarket_id_dv"], inplace=True)
-                df = df.merge(dp, on="cardmarket_id", how="left")
+                df = pd.DataFrame(rows, dtype=str)
                 df = df.rename(columns={
                     "card_name": "display_name",
                     "lang":      "language",
