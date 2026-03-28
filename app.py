@@ -304,17 +304,28 @@ def load_catalog() -> pd.DataFrame:
     sb = get_supabase()
     if sb is not None:
         try:
-            resp = (
-                sb.table("inventory_current")
-                .select(
-                    "internal_sku, cardmarket_id, qty, last_updated,"
-                    "card_name, set_code, set_name, cn, rarity,"
-                    "lang, is_reverse, condition, listed_price_eur, name_es"
-                )
-                .limit(50000)
-                .execute()
+            # Supabase server default is 1,000 rows/request — paginate to get all rows.
+            _COLS = (
+                "internal_sku, cardmarket_id, qty, last_updated,"
+                "card_name, set_code, set_name, cn, rarity,"
+                "lang, is_reverse, condition, listed_price_eur, name_es"
             )
-            rows = resp.data
+            rows: list = []
+            page_size = 1000
+            offset = 0
+            while True:
+                chunk = (
+                    sb.table("inventory_current")
+                    .select(_COLS)
+                    .range(offset, offset + page_size - 1)
+                    .execute()
+                    .data or []
+                )
+                rows.extend(chunk)
+                if len(chunk) < page_size:
+                    break
+                offset += page_size
+
             if rows:
                 df = pd.DataFrame(rows, dtype=str)
                 df = df.rename(columns={
@@ -564,16 +575,6 @@ if "cambio_amount" not in st.session_state:
 # CATÁLOGO
 # ─────────────────────────────────────────────
 catalog = load_catalog()
-
-# DEBUG TEMPORAL — eliminar tras diagnóstico
-with st.expander("🔍 Debug catálogo", expanded=False):
-    st.write(f"Filas en catálogo: {len(catalog)}")
-    st.write(f"'869881-0001' en index: {'869881-0001' in catalog.index}")
-    st.write(f"Index dtype: {catalog.index.dtype}")
-    st.write(f"Primeros 5 SKUs: {list(catalog.index[:5])}")
-    if "cardmarket_id" in catalog.columns:
-        match = catalog[catalog["cardmarket_id"] == "869881"]
-        st.write(f"cardmarket_id=='869881' matches: {len(match)}")
 
 # Ventas del día en memoria — carga única desde Sheets/CSV al arrancar.
 # Todos los scans y voids del día se añaden aquí directamente (sin red).
