@@ -352,6 +352,54 @@ def load_catalog() -> pd.DataFrame:
     return df
 
 
+def _suffix_to_lang_rev(suffix: str) -> tuple[list[str], bool | None]:
+    """Decodifica sufijo de internal_sku → (candidatos de lang, is_reverse).
+    0001 = ESP/JPN reverse-or-only, 0002 = ENG reverse-or-only,
+    0003 = ESP/JPN no-reverse,      0004 = ENG no-reverse.
+    """
+    if suffix == "0001":
+        return (["ESP", "JPN"], True)
+    if suffix == "0002":
+        return (["ENG"], True)
+    if suffix == "0003":
+        return (["ESP", "JPN"], False)
+    if suffix == "0004":
+        return (["ENG"], False)
+    return ([], None)
+
+
+@st.cache_data(ttl=3600)
+def load_ref_cards() -> pd.DataFrame:
+    """Carga ref_cards de Supabase como catálogo de fallback.
+
+    Cubre cualquier carta catalogada en el pipeline aunque no esté en
+    inventory_current (e.g. compra recibida pero pendiente de subir).
+    Retorna DataFrame vacío si Supabase no está disponible.
+    """
+    sb = get_supabase()
+    if sb is None:
+        return pd.DataFrame()
+    try:
+        rows: list = []
+        offset = 0
+        page_size = 1000
+        while True:
+            chunk = (
+                sb.table("ref_cards")
+                .select("cardmarket_id, card_name, lang, is_reverse, rarity, name_es")
+                .range(offset, offset + page_size - 1)
+                .execute()
+                .data or []
+            )
+            rows.extend(chunk)
+            if len(chunk) < page_size:
+                break
+            offset += page_size
+        return pd.DataFrame(rows) if rows else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+
 def load_daily_sales() -> pd.DataFrame:
     """
     Lee las ventas del día actual.
@@ -462,18 +510,44 @@ def register_scan(sku: str) -> tuple[bool, str]:
     Registra el escaneo de un SKU.
     Retorna (éxito, mensaje_feedback).
     """
+    ref_product: dict | None = None
+
     if sku not in catalog.index:
-        # Fallback: buscar por cardmarket_id (etiquetas impresas sin sufijo -0001)
+        # Fallback 1: buscar por cardmarket_id en inventory_current
+        # (etiquetas impresas sin sufijo, e.g. "869881")
         if "cardmarket_id" in catalog.columns:
             matches = catalog[catalog["cardmarket_id"] == sku]
             if not matches.empty:
                 sku = matches.index[0]
-            else:
-                return False, f"SKU no encontrado: {sku}"
-        else:
+
+        # Fallback 2: buscar en ref_cards descomponiendo el internal_sku
+        # Cubre cartas catalogadas pero aún no subidas a inventory_current.
+        if sku not in catalog.index and not ref_cards_df.empty:
+            parts = sku.rsplit("-", 1)
+            if len(parts) == 2:
+                cm_id, suffix = parts
+                rc = ref_cards_df[ref_cards_df["cardmarket_id"] == cm_id]
+                if not rc.empty:
+                    langs, is_rev = _suffix_to_lang_rev(suffix)
+                    if langs:
+                        filtered = rc[rc["lang"].isin(langs)]
+                        if is_rev is not None:
+                            filtered_rev = filtered[filtered["is_reverse"].astype(str).str.lower() == str(is_rev).lower()]
+                            if not filtered_rev.empty:
+                                filtered = filtered_rev
+                        row = filtered.iloc[0] if not filtered.empty else rc.iloc[0]
+                    else:
+                        row = rc.iloc[0]
+                    ref_product = {
+                        "display_name":   row.get("card_name", sku),
+                        "language":       row.get("lang", ""),
+                        "business_rarity": row.get("rarity", ""),
+                    }
+
+        if sku not in catalog.index and ref_product is None:
             return False, f"SKU no encontrado: {sku}"
 
-    product = catalog.loc[sku]
+    product = ref_product if ref_product is not None else catalog.loc[sku]
     scan_mode = st.session_state.get("scan_mode", "venta")
     if scan_mode == "venta":
         payment_method  = st.session_state.get("payment_mode", "efectivo")
@@ -575,6 +649,7 @@ if "cambio_amount" not in st.session_state:
 # CATÁLOGO
 # ─────────────────────────────────────────────
 catalog = load_catalog()
+ref_cards_df = load_ref_cards()
 
 # Ventas del día en memoria — carga única desde Sheets/CSV al arrancar.
 # Todos los scans y voids del día se añaden aquí directamente (sin red).
