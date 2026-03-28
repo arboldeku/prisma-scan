@@ -852,9 +852,9 @@ else:
         unsafe_allow_html=True,
     )
 
-# Botón "Nuevo ticket" — estampa descuento e importe en registros de sesión y resetea
-if st.button("➕ Nuevo ticket", key="new_ticket", use_container_width=True, type="secondary"):
-    sid = st.session_state.current_session_id
+# Callback "Nuevo ticket" — se ejecuta antes del siguiente render, por eso puede limpiar keys de widgets
+def _nuevo_ticket():
+    sid         = st.session_state.current_session_id
     disc_final  = st.session_state.session_discount
     trade_final = st.session_state.session_trade_amount
     if disc_final > 0:
@@ -867,13 +867,16 @@ if st.button("➕ Nuevo ticket", key="new_ticket", use_container_width=True, typ
                     and s.get("money_direction") in ("pagar", "recibir")):
                 st.session_state.sales[i]["trade_amount"] = trade_final if not stamped else 0.0
                 stamped = True
-    st.session_state.current_session_id      = str(uuid.uuid4())[:8]
-    st.session_state.session_discount        = 0.0
-    st.session_state.session_trade_amount    = 0.0
-    st.session_state["session_discount_input"] = 0.0
-    st.session_state["session_trade_input"]    = 0.0
-    st.session_state.cambio_has_money        = False
-    st.rerun()
+    st.session_state.current_session_id   = str(uuid.uuid4())[:8]
+    st.session_state.session_discount     = 0.0
+    st.session_state.session_trade_amount = 0.0
+    st.session_state.cambio_has_money     = False
+    # Borrar keys de widgets para que los inputs se reinicien al siguiente render
+    st.session_state.pop("session_discount_input", None)
+    st.session_state.pop("session_trade_input", None)
+
+st.button("➕ Nuevo ticket", key="new_ticket", use_container_width=True,
+          type="secondary", on_click=_nuevo_ticket)
 
 # ─────────────────────────────────────────────
 # D) DOS LISTAS: VENTAS | CAMBIOS
