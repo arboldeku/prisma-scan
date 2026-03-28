@@ -565,6 +565,16 @@ if "cambio_amount" not in st.session_state:
 # ─────────────────────────────────────────────
 catalog = load_catalog()
 
+# DEBUG TEMPORAL — eliminar tras diagnóstico
+with st.expander("🔍 Debug catálogo", expanded=False):
+    st.write(f"Filas en catálogo: {len(catalog)}")
+    st.write(f"'869881-0001' en index: {'869881-0001' in catalog.index}")
+    st.write(f"Index dtype: {catalog.index.dtype}")
+    st.write(f"Primeros 5 SKUs: {list(catalog.index[:5])}")
+    if "cardmarket_id" in catalog.columns:
+        match = catalog[catalog["cardmarket_id"] == "869881"]
+        st.write(f"cardmarket_id=='869881' matches: {len(match)}")
+
 # Ventas del día en memoria — carga única desde Sheets/CSV al arrancar.
 # Todos los scans y voids del día se añaden aquí directamente (sin red).
 if "sales" not in st.session_state:
