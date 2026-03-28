@@ -676,6 +676,13 @@ else:
         if col_tj2.button("💳  TARJETA", use_container_width=True,
                           type="primary" if pay == "tarjeta" else "secondary", key="mode_tarjeta"):
             st.session_state.payment_mode = "tarjeta"; st.rerun()
+        # Campo importe del cambio
+        _tamt = st.number_input(
+            "Importe cambio (€)", min_value=0.0, max_value=9999.0,
+            value=st.session_state.session_trade_amount,
+            step=0.50, format="%.2f", key="session_trade_input",
+        )
+        st.session_state.session_trade_amount = _tamt
 
 # ─────────────────────────────────────────────
 # B3) ENTRADA MANUAL — por si falla una etiqueta
@@ -826,24 +833,13 @@ else:
         for s in sess_sales
     )
 
-    col_i1, col_i2 = st.columns(2)
-    with col_i1:
-        disc_val = st.number_input(
-            "Descuento (€)", min_value=0.0, max_value=9999.0,
-            value=st.session_state.session_discount,
-            step=0.50, format="%.2f", key="session_discount_input",
-        )
-        st.session_state.session_discount = disc_val
-    with col_i2:
-        if has_cambio_money:
-            tamt_val = st.number_input(
-                "Importe cambio (€)", min_value=0.0, max_value=9999.0,
-                value=st.session_state.session_trade_amount,
-                step=0.50, format="%.2f", key="session_trade_input",
-            )
-            st.session_state.session_trade_amount = tamt_val
-        else:
-            tamt_val = 0.0
+    disc_val = st.number_input(
+        "Descuento (€)", min_value=0.0, max_value=9999.0,
+        value=st.session_state.session_discount,
+        step=0.50, format="%.2f", key="session_discount_input",
+    )
+    st.session_state.session_discount = disc_val
+    tamt_val = st.session_state.session_trade_amount
 
     extras = []
     if disc_val > 0:
@@ -863,15 +859,20 @@ if st.button("➕ Nuevo ticket", key="new_ticket", use_container_width=True, typ
     trade_final = st.session_state.session_trade_amount
     if disc_final > 0:
         st.session_state.session_discounts[sid] = disc_final
-    # Estampar trade_amount en los registros de cambio con dinero de esta sesión
+    # Estampar trade_amount solo en la primera carta de cambio con dinero (importe es del ticket, no por carta)
     if trade_final > 0:
+        stamped = False
         for i, s in enumerate(st.session_state.sales):
             if (s.get("session_id") == sid
                     and s.get("money_direction") in ("pagar", "recibir")):
-                st.session_state.sales[i]["trade_amount"] = trade_final
-    st.session_state.current_session_id   = str(uuid.uuid4())[:8]
-    st.session_state.session_discount     = 0.0
-    st.session_state.session_trade_amount = 0.0
+                st.session_state.sales[i]["trade_amount"] = trade_final if not stamped else 0.0
+                stamped = True
+    st.session_state.current_session_id      = str(uuid.uuid4())[:8]
+    st.session_state.session_discount        = 0.0
+    st.session_state.session_trade_amount    = 0.0
+    st.session_state["session_discount_input"] = 0.0
+    st.session_state["session_trade_input"]    = 0.0
+    st.session_state.cambio_has_money        = False
     st.rerun()
 
 # ─────────────────────────────────────────────
@@ -1000,28 +1001,33 @@ if not df_sales.empty:
         # Cambios (trades)
         _cambios = _pm[_pm.get("money_direction", pd.Series()) == "cambio"]["gross_amount"].sum() if "money_direction" in _pm.columns else 0.0
 
+        _disc_row = (
+            f'<div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;">'
+            f'<span style="color:var(--prisma-muted);font-size:0.8rem;">Descuentos</span>'
+            f'<span style="color:#f04060;font-size:0.9rem;">−{_disc_total:.2f} €</span></div>'
+        ) if _disc_total > 0 else ""
+        _cambios_span = (
+            f'<span style="font-size:0.75rem;color:var(--prisma-muted);">🔄 Cambios: <b>{_cambios:.2f} €</b></span>'
+        ) if _cambios > 0 else ""
         st.markdown(
-            f"""<div style="background:var(--prisma-surface);border:1px solid var(--prisma-border);
-            border-radius:12px;padding:1rem 1.2rem;margin-bottom:1rem;">
-            <div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;">
-                <span style="color:var(--prisma-muted);font-size:0.8rem;">Cartas vendidas</span>
-                <span style="font-weight:700;font-size:0.9rem;">{int(_qty_total)} uds</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;">
-                <span style="color:var(--prisma-muted);font-size:0.8rem;">Total bruto</span>
-                <span style="font-weight:700;font-size:0.9rem;">{_gross_total:.2f} €</span>
-            </div>
-            {'<div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;"><span style="color:var(--prisma-muted);font-size:0.8rem;">Descuentos</span><span style="color:#f04060;font-size:0.9rem;">−{_disc_total:.2f} €</span></div>' if _disc_total > 0 else ''}
-            <div style="border-top:1px solid var(--prisma-border);margin:0.5rem 0;"></div>
-            <div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;">
-                <span style="color:var(--prisma-accent);font-size:0.9rem;font-weight:700;">NETO</span>
-                <span style="color:var(--prisma-accent);font-weight:700;font-size:1rem;">{_net_total:.2f} €</span>
-            </div>
-            <div style="display:flex;gap:1rem;margin-top:0.4rem;">
-                <span style="font-size:0.75rem;color:var(--prisma-muted);">💵 Efectivo: <b>{_efect:.2f} €</b></span>
-                <span style="font-size:0.75rem;color:var(--prisma-muted);">💳 Tarjeta: <b>{_tarj:.2f} €</b></span>
-                {'<span style="font-size:0.75rem;color:var(--prisma-muted);">🔄 Cambios: <b>' + f"{_cambios:.2f} €</b></span>" if _cambios > 0 else ''}
-            </div></div>""",
+            f'<div style="background:var(--prisma-surface);border:1px solid var(--prisma-border);'
+            f'border-radius:12px;padding:1rem 1.2rem;margin-bottom:1rem;">'
+            f'<div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;">'
+            f'<span style="color:var(--prisma-muted);font-size:0.8rem;">Cartas vendidas</span>'
+            f'<span style="font-weight:700;font-size:0.9rem;">{int(_qty_total)} uds</span></div>'
+            f'<div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;">'
+            f'<span style="color:var(--prisma-muted);font-size:0.8rem;">Total bruto</span>'
+            f'<span style="font-weight:700;font-size:0.9rem;">{_gross_total:.2f} €</span></div>'
+            f'{_disc_row}'
+            f'<div style="border-top:1px solid var(--prisma-border);margin:0.5rem 0;"></div>'
+            f'<div style="display:flex;justify-content:space-between;margin-bottom:0.6rem;">'
+            f'<span style="color:var(--prisma-accent);font-size:0.9rem;font-weight:700;">NETO</span>'
+            f'<span style="color:var(--prisma-accent);font-weight:700;font-size:1rem;">{_net_total:.2f} €</span></div>'
+            f'<div style="display:flex;gap:1rem;margin-top:0.4rem;">'
+            f'<span style="font-size:0.75rem;color:var(--prisma-muted);">💵 Efectivo: <b>{_efect:.2f} €</b></span>'
+            f'<span style="font-size:0.75rem;color:var(--prisma-muted);">💳 Tarjeta: <b>{_tarj:.2f} €</b></span>'
+            f'{_cambios_span}'
+            f'</div></div>',
             unsafe_allow_html=True,
         )
 
