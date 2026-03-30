@@ -821,9 +821,13 @@ with st.expander("Entrada manual (etiqueta dañada)"):
 # B5) BUSCADOR DE INVENTARIO
 # ─────────────────────────────────────────────
 with st.expander("🔍 Buscar carta en inventario"):
-    inv = load_store_inventory()
+    inv = catalog.reset_index()
+    # Solo cartas con stock disponible
+    if "qty" in inv.columns:
+        inv = inv[pd.to_numeric(inv["qty"], errors="coerce").fillna(0) > 0]
+
     if inv.empty:
-        st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">store_hits_catalog.csv no encontrado</span>', unsafe_allow_html=True)
+        st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Inventario no disponible</span>', unsafe_allow_html=True)
     else:
         search_name = st.text_input("Nombre Pokémon", placeholder="Snorlax...", key="search_name")
         s1, s2, s3 = st.columns(3)
@@ -831,25 +835,25 @@ with st.expander("🔍 Buscar carta en inventario"):
             set_opts = ["Todas"] + sorted(inv["set_name"].dropna().unique().tolist())
             search_set = st.selectbox("Expansión", set_opts, key="search_set")
         with s2:
-            lang_opts = ["Todos"] + sorted(inv["lang"].dropna().unique().tolist())
+            lang_opts = ["Todos"] + sorted(inv["language"].dropna().unique().tolist())
             search_lang = st.selectbox("Idioma", lang_opts, key="search_lang")
         with s3:
-            rar_opts = ["Todas"] + sorted(inv["rarity"].dropna().unique().tolist())
+            rar_opts = ["Todas"] + sorted(inv["business_rarity"].dropna().unique().tolist())
             search_rar = st.selectbox("Rareza", rar_opts, key="search_rar")
 
         has_filter = search_name or search_set != "Todas" or search_lang != "Todos" or search_rar != "Todas"
         if has_filter:
             mask = pd.Series(True, index=inv.index)
             if search_name:
-                mask &= inv["card_name"].str.contains(search_name, case=False, na=False)
+                mask &= inv["display_name"].str.contains(search_name, case=False, na=False)
             if search_set != "Todas":
                 mask &= inv["set_name"] == search_set
             if search_lang != "Todos":
-                mask &= inv["lang"] == search_lang
+                mask &= inv["language"] == search_lang
             if search_rar != "Todas":
-                mask &= inv["rarity"] == search_rar
-            res = inv[mask][["internal_sku", "card_name", "lang", "rarity", "set_name", "cn"]].rename(columns={
-                "card_name": "nombre", "lang": "idioma", "rarity": "rareza", "set_name": "expansión",
+                mask &= inv["business_rarity"] == search_rar
+            res = inv[mask][["internal_sku", "display_name", "language", "business_rarity", "set_name", "cn"]].rename(columns={
+                "display_name": "nombre", "language": "idioma", "business_rarity": "rareza", "set_name": "expansión",
             })
             if res.empty:
                 st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin resultados</span>', unsafe_allow_html=True)
