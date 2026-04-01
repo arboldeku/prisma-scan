@@ -786,21 +786,27 @@ def _draw_label(c, data: dict):
     c.setLineWidth(0.6)
     c.line(0, top_y, W, top_y)
 
-    # Barcode
-    bc_probe = _code128.Code128(data["sku"], barHeight=1, barWidth=1,
-                                humanReadable=False, lquiet=0, rquiet=0)
-    bc_margin = 2 * _mm
-    bar_w = (W - 2 * bc_margin) / bc_probe.width
-    bc_obj = _code128.Code128(data["sku"], barHeight=_BC_H - 1 * _mm,
-                              barWidth=bar_w, humanReadable=False,
-                              barFillColor=_black, lquiet=0, rquiet=0)
-    bc_y = (top_y - _BC_H) / 2
-    c.saveState()
-    p = c.beginPath()
-    p.rect(0, 0, W, top_y)
-    c.clipPath(p, stroke=0)
-    bc_obj.drawOn(c, bc_margin, bc_y)
-    c.restoreState()
+    # Barcode — sin clipping, ancho máximo con margen
+    try:
+        bc_margin = 2.5 * _mm
+        available_w = W - 2 * bc_margin
+        # Crear barcode probe para medir
+        bc_probe = _code128.Code128(data["sku"], barHeight=1, barWidth=1,
+                                    humanReadable=False, lquiet=0, rquiet=0)
+        # Calcular barWidth: queremos que el barcode ocupe (available_w)
+        # Ancho total = width_in_modules * barWidth
+        # barWidth = available_w / width_in_modules
+        bar_w = max(0.5, available_w / bc_probe.width if bc_probe.width > 0 else 0.8)
+        # Limitar barWidth a máximo 1.5 para legibilidad
+        bar_w = min(1.5, bar_w)
+
+        bc_obj = _code128.Code128(data["sku"], barHeight=_BC_H - 1.5 * _mm,
+                                  barWidth=bar_w, humanReadable=False,
+                                  barFillColor=_black, lquiet=0, rquiet=0)
+        bc_y = (top_y - (_BC_H - 1.5 * _mm)) / 2
+        bc_obj.drawOn(c, bc_margin, bc_y)
+    except Exception:
+        pass  # si falla el barcode, continuar sin él
 
 
 def _generate_label_pdf(labels: list) -> bytes:
@@ -839,6 +845,16 @@ def _parse_labels_from_csv(file_bytes: bytes, cm_idx: dict) -> tuple[list, list]
     reader = _csv.DictReader(_io.StringIO(content))
     labels_raw: list = []
     unmatched: list  = []
+    ref_cards_idx = {}
+    if not ref_cards_df.empty:
+        # Índice de ref_cards por cardmarket_id + lang
+        for _, rc in ref_cards_df.iterrows():
+            cm_id = str(rc.get("cardmarket_id", "")).strip()
+            lang = str(rc.get("lang", "")).strip()
+            if cm_id and lang:
+                key = (cm_id, lang)
+                if key not in ref_cards_idx:
+                    ref_cards_idx[key] = rc
 
     for row in reader:
         # Formato con internal_sku directo
@@ -856,15 +872,27 @@ def _parse_labels_from_csv(file_bytes: bytes, cm_idx: dict) -> tuple[list, list]
             })
             continue
 
-        # Formato Cardmarket export
-        lang_full = row.get("language", "")
+        # Formato Cardmarket export (cardmarketId + language + setCode + cn + condition)
+        lang_full = row.get("language", "").strip()
         lang = _LANG_MAP_FULL.get(lang_full, lang_full)
         cm_id = str(row.get("cardmarketId", row.get("cardmarket_id", ""))).strip()
         qty = int(row.get("quantity", 1) or 1)
+
+        # 1. Buscar en inventory_current (cm_idx)
         sku = cm_idx.get((cm_id, lang))
+
+        # 2. Fallback: buscar en ref_cards si no está en inventory
+        ref_info = None
+        if not sku and (cm_id, lang) in ref_cards_idx:
+            ref_info = ref_cards_idx[(cm_id, lang)]
+            # En ref_cards no hay internal_sku, usar cardmarketId + 4-digit suffix
+            # (mismo patrón que en register_scan)
+            sku = f"{cm_id}-0002" if lang == "ENG" else f"{cm_id}-0001"
+
         if not sku:
-            unmatched.append(f"{row.get('name','?')} ({lang}) — cardmarketId {cm_id}")
-            sku = cm_id  # usar cm_id como fallback para al menos dibujar barcode
+            unmatched.append(f"{row.get('name','?')} ({lang}) [cardmarketId: {cm_id}]")
+            sku = cm_id  # fallback final: al menos el número de barcode
+
         labels_raw.append({
             "sku":      sku,
             "name":     row.get("name", ""),
