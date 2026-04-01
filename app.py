@@ -786,7 +786,7 @@ def _draw_label(c, data: dict):
     c.setLineWidth(0.6)
     c.line(0, top_y, W, top_y)
 
-    # Barcode — código exacto del script original probado
+    # Barcode — sin clipping (debug)
     bc_probe = _code128.Code128(data["sku"], barHeight=1, barWidth=1,
                                 humanReadable=False, lquiet=0, rquiet=0)
     bc_margin = 2 * _mm
@@ -796,12 +796,8 @@ def _draw_label(c, data: dict):
                               barFillColor=_black, lquiet=0, rquiet=0)
     bc_y = (top_y - _BC_H) / 2
 
-    c.saveState()
-    p = c.beginPath()
-    p.rect(0, 0, W, top_y)
-    c.clipPath(p, stroke=0)
+    # Dibujar SIN clipping para ver si es el culpable
     bc_obj.drawOn(c, bc_margin, bc_y)
-    c.restoreState()
 
 
 def _generate_label_pdf(labels: list) -> bytes:
