@@ -798,12 +798,21 @@ def _draw_label(c, data: dict):
     bc_probe = _code128.Code128(data["sku"], barHeight=1, barWidth=1,
                                 humanReadable=False, lquiet=0, rquiet=0)
     bc_margin = 2 * _mm
-    bar_w = (W - 2 * bc_margin) / bc_probe.width
+    if bc_probe.width > 0:
+        bar_w = (W - 2 * bc_margin) / bc_probe.width
+    else:
+        bar_w = 0.5
     bc_obj = _code128.Code128(data["sku"], barHeight=_BC_H - 1 * _mm,
                               barWidth=bar_w, humanReadable=False,
                               barFillColor=_black, barStrokeColor=_black,
                               lquiet=0, rquiet=0)
     bc_y = (top_y - _BC_H) / 2
+    # DEBUG: Draw border around barcode area to verify positioning
+    c.setFillColor(_white)
+    c.setStrokeColor(_black)
+    c.setLineWidth(0.3)
+    c.rect(bc_margin - 0.5 * _mm, bc_y - 0.5 * _mm,
+           W - 2 * bc_margin + _mm, _BC_H + _mm, fill=0, stroke=1)
     bc_obj.drawOn(c, bc_margin, bc_y)
 
 
