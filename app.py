@@ -801,15 +801,10 @@ def _draw_label(c, data: dict):
     bar_w = (W - 2 * bc_margin) / bc_probe.width
     bc_obj = _code128.Code128(data["sku"], barHeight=_BC_H - 1 * _mm,
                               barWidth=bar_w, humanReadable=False,
+                              barFillColor=_black, barStrokeColor=_black,
                               lquiet=0, rquiet=0)
     bc_y = (top_y - _BC_H) / 2
-
-    c.saveState()
-    p = c.beginPath()
-    p.rect(0, 0, W, top_y)
-    c.clipPath(p, stroke=0)
     bc_obj.drawOn(c, bc_margin, bc_y)
-    c.restoreState()
 
 
 def _generate_label_pdf(labels: list) -> bytes:
