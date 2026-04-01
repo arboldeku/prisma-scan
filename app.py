@@ -1542,18 +1542,40 @@ with _tab_labels:
             if _res_lbl.empty:
                 st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin resultados — ajusta los filtros</span>', unsafe_allow_html=True)
             else:
-                # Cantidad de etiquetas por carta (por defecto qty del inventario)
-                _qty_col = "qty" if "qty" in _res_lbl.columns else None
-                _lbl_qty = st.number_input(
-                    f"Etiquetas por carta ({len(_res_lbl)} resultado(s))",
-                    min_value=1, max_value=50, value=1, step=1, key="lbl_qty",
+                _has_inv_qty = "qty" in _res_lbl.columns
+                _use_inv_qty = st.checkbox(
+                    "Usar cantidad de inventario (qty de inventory_current)",
+                    value=_has_inv_qty,
+                    key="lbl_use_inv_qty",
+                    disabled=not _has_inv_qty,
                 )
-                _preview_lbl = _res_lbl[["internal_sku", "display_name", "language", "business_rarity", "set_name", "cn"]].rename(
+                if not _use_inv_qty:
+                    _lbl_qty = st.number_input(
+                        "Etiquetas por carta",
+                        min_value=1, max_value=50, value=1, step=1, key="lbl_qty",
+                    )
+                else:
+                    _lbl_qty = None  # se leerá por fila
+
+                # Preview — incluir qty si se usa inventario
+                _prev_cols = ["internal_sku", "display_name", "language", "business_rarity", "set_name", "cn"]
+                if _use_inv_qty and _has_inv_qty:
+                    _prev_cols.append("qty")
+                _preview_lbl = _res_lbl[_prev_cols].rename(
                     columns={"display_name": "nombre", "language": "idioma",
                              "business_rarity": "rareza", "set_name": "expansión"}
                 )
                 st.dataframe(_preview_lbl.head(100), use_container_width=True, hide_index=True, height=220)
-                st.markdown(f'<span style="color:var(--prisma-muted);font-size:0.72rem;">{len(_res_lbl)} carta(s) × {_lbl_qty} = {len(_res_lbl)*_lbl_qty} etiqueta(s)</span>', unsafe_allow_html=True)
+
+                if _use_inv_qty and _has_inv_qty:
+                    _total_lbl = int(pd.to_numeric(_res_lbl["qty"], errors="coerce").fillna(1).sum())
+                else:
+                    _total_lbl = len(_res_lbl) * (_lbl_qty or 1)
+                st.markdown(
+                    f'<span style="color:var(--prisma-muted);font-size:0.72rem;">'
+                    f'{len(_res_lbl)} carta(s) → {_total_lbl} etiqueta(s)</span>',
+                    unsafe_allow_html=True,
+                )
 
                 if st.button("Generar PDF", use_container_width=True, type="primary", key="lbl_gen_manual"):
                     _release_dates = _load_release_dates()
@@ -1567,7 +1589,11 @@ with _tab_labels:
                             "cn":        _r.get("cn", ""),
                             "condition": _r.get("condition", ""),
                         }
-                        for _ in range(_lbl_qty):
+                        if _use_inv_qty and _has_inv_qty:
+                            _n = max(1, int(pd.to_numeric(_r.get("qty", 1), errors="coerce") or 1))
+                        else:
+                            _n = _lbl_qty or 1
+                        for _ in range(_n):
                             _labels_manual.append(dict(_entry))
                     _labels_manual.sort(key=lambda e: _label_sort_key(e, _release_dates))
                     _pdf_manual = _generate_label_pdf(_labels_manual)
