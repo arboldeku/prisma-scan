@@ -617,6 +617,276 @@ def void_sale(original: dict) -> None:
 
 
 # ─────────────────────────────────────────────
+# ETIQUETAS — funciones auxiliares
+# ─────────────────────────────────────────────
+import io as _io
+import re as _re
+
+from reportlab.pdfgen import canvas as _canvas
+from reportlab.lib.units import mm as _mm
+from reportlab.lib.colors import black as _black, white as _white, HexColor as _HexColor
+from reportlab.graphics.barcode import code128 as _code128
+from reportlab.pdfbase.pdfmetrics import stringWidth as _stringWidth
+from reportlab.pdfbase.ttfonts import TTFont as _TTFont
+from reportlab.pdfbase import pdfmetrics as _pdfmetrics
+
+_LBL_W  = 60 * _mm
+_LBL_H  = 30 * _mm
+_TOP_H  = 13 * _mm
+_LEFT_W = 18 * _mm
+_BC_H   = 15 * _mm
+_PAD    =  1 * _mm
+
+_LANG_MAP_FULL = {
+    "English": "ENG", "Spanish": "ESP", "Korean": "KOR",
+    "Japanese": "JPN", "French": "FRA", "German": "DEU",
+    "Italian": "ITA", "Portuguese": "POR",
+}
+_LANGS_OCC_SET = {"ENG", "ESP", "FRA", "DEU", "ITA", "POR"}
+
+
+@st.cache_resource
+def _register_fonts():
+    """Registra fuentes Windows para las etiquetas PDF. Silencia errores si no están."""
+    for name, path in [
+        ("GothicBold", "C:/Windows/Fonts/GOTHICB.TTF"),
+        ("ArialBd",    "C:/Windows/Fonts/arialbd.ttf"),
+    ]:
+        try:
+            _pdfmetrics.registerFont(_TTFont(name, path))
+        except Exception:
+            pass
+    return True
+
+
+@st.cache_data(ttl=3600)
+def _load_release_dates() -> dict:
+    """Devuelve dict {set_code: datetime} de ambos ficheros de fechas."""
+    import csv as _csv
+    dates: dict = {}
+    for fpath, sep in [
+        (Path("data/Release dates.csv"),    ";"),
+        (Path("data/Release dates jp.csv"), ";"),
+    ]:
+        if not fpath.exists():
+            continue
+        try:
+            with open(fpath, encoding="latin-1") as f:
+                reader = _csv.reader(f, delimiter=sep)
+                for row in reader:
+                    if len(row) < 2:
+                        continue
+                    cell = row[0].strip()
+                    # La última palabra del campo Name es el set_code (e.g. "Ascended Heroes ASC")
+                    parts = cell.split()
+                    if not parts:
+                        continue
+                    code = parts[-1].upper()
+                    date_str = row[1].strip()
+                    try:
+                        from datetime import datetime as _dt
+                        d = _dt.strptime(date_str, "%d %b %y")
+                        dates[code] = d
+                    except (ValueError, TypeError):
+                        pass
+        except Exception:
+            pass
+    return dates
+
+
+def _label_sort_key(entry: dict, release_dates: dict) -> tuple:
+    """Clave de ordenación: grupo(occ/jp) → fecha desc → cn numérico."""
+    lang = entry.get("lang", "")
+    group = 0 if lang in _LANGS_OCC_SET else 1
+    sc = entry.get("set_code", "").upper()
+    d = release_dates.get(sc)
+    date_ts = -d.timestamp() if d else 1e12
+    m = _re.search(r"(\d+)", entry.get("cn", ""))
+    cn_num = int(m.group(1)) if m else 9999
+    return (group, date_ts, cn_num)
+
+
+def _draw_label(c, data: dict):
+    """Dibuja una etiqueta de 60×30mm en el canvas dado."""
+    _register_fonts()
+    W, H = _LBL_W, _LBL_H
+    top_y = H - _TOP_H
+
+    # Fondo blanco + borde
+    c.setFillColor(_white)
+    c.setStrokeColor(_black)
+    c.setLineWidth(0.8)
+    c.rect(0, 0, W, H, fill=1, stroke=1)
+
+    # Bloque negro izquierdo (PRISMA)
+    c.setFillColor(_black)
+    c.rect(0, top_y, _LEFT_W, _TOP_H, fill=1, stroke=0)
+
+    blk_pad = 1.5 * _mm
+    blk_w   = _LEFT_W - 2 * blk_pad
+    font = "GothicBold" if "GothicBold" in _pdfmetrics.getRegisteredFontNames() else "Helvetica-Bold"
+
+    fs = 24.0
+    while _stringWidth("PRISMA", font, fs) > blk_w and fs > 6:
+        fs -= 0.5
+    c.setFillColor(_white)
+    c.setFont(font, fs)
+    pw = _stringWidth("PRISMA", font, fs)
+    c.drawString((_LEFT_W - pw) / 2, top_y + _TOP_H * 0.50, "PRISMA")
+
+    sub_fs = fs * 0.48
+    while _stringWidth("COLLECT & PLAY!", font, sub_fs) > blk_w and sub_fs > 2:
+        sub_fs -= 0.25
+    c.setFont(font, sub_fs)
+    sw = _stringWidth("COLLECT & PLAY!", font, sub_fs)
+    sx = (_LEFT_W - sw) / 2
+    sy = top_y + _TOP_H * 0.24
+    for dx, dy in [(0, 0), (0.3, 0), (0, 0.3), (0.3, 0.3)]:
+        c.drawString(sx + dx, sy + dy, "COLLECT & PLAY!")
+
+    c.setStrokeColor(_black)
+    c.setLineWidth(0.6)
+    c.line(_LEFT_W, top_y, _LEFT_W, H)
+
+    right_x = _LEFT_W + 2 * _PAD
+    right_w  = W - _LEFT_W - 2 * _PAD
+
+    c.setFillColor(_black)
+    name_str = f"{data['name']} ({data['lang']})"
+    fs1 = 9.0
+    while _stringWidth(name_str, "Helvetica-BoldOblique", fs1) > right_w and fs1 > 5:
+        fs1 -= 0.5
+    c.setFont("Helvetica-BoldOblique", fs1)
+    c.drawString(right_x, top_y + _TOP_H * 0.65, name_str)
+
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(right_x, top_y + _TOP_H * 0.38, f"{data['set_code']} - {data['cn']}")
+
+    # Línea 3: SKU + badge de condición
+    cond = str(data.get("condition", "")).strip().upper()
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(right_x, top_y + _TOP_H * 0.10, data["sku"])
+    if cond:
+        badge_fs = 6.5
+        badge_txt = f"[{cond}]"
+        badge_w = _stringWidth(badge_txt, "Helvetica-Bold", badge_fs) + 2 * _mm
+        badge_h = badge_fs * 1.4
+        bx = W - _PAD - badge_w - 0.5 * _mm
+        by = top_y + _TOP_H * 0.04
+        if cond == "NM":
+            c.setFillColor(_HexColor("#888888"))
+        else:
+            c.setFillColor(_HexColor("#c00000"))
+        c.roundRect(bx, by, badge_w, badge_h, 1 * _mm, fill=1, stroke=0)
+        c.setFillColor(_white)
+        c.setFont("Helvetica-Bold", badge_fs)
+        c.drawString(bx + 1 * _mm, by + badge_h * 0.25, badge_txt)
+
+    c.setStrokeColor(_black)
+    c.setLineWidth(0.6)
+    c.line(0, top_y, W, top_y)
+
+    # Barcode
+    bc_probe = _code128.Code128(data["sku"], barHeight=1, barWidth=1,
+                                humanReadable=False, lquiet=0, rquiet=0)
+    bc_margin = 2 * _mm
+    bar_w = (W - 2 * bc_margin) / bc_probe.width
+    bc_obj = _code128.Code128(data["sku"], barHeight=_BC_H - 1 * _mm,
+                              barWidth=bar_w, humanReadable=False,
+                              barFillColor=_black, lquiet=0, rquiet=0)
+    bc_y = (top_y - _BC_H) / 2
+    c.saveState()
+    p = c.beginPath()
+    p.rect(0, 0, W, top_y)
+    c.clipPath(p, stroke=0)
+    bc_obj.drawOn(c, bc_margin, bc_y)
+    c.restoreState()
+
+
+def _generate_label_pdf(labels: list) -> bytes:
+    """Genera el PDF con todas las etiquetas y devuelve los bytes."""
+    buf = _io.BytesIO()
+    c = _canvas.Canvas(buf, pagesize=(_LBL_W, _LBL_H))
+    for i, data in enumerate(labels):
+        _draw_label(c, data)
+        if i < len(labels) - 1:
+            c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+@st.cache_data
+def _build_cm_index() -> dict:
+    """Construye índice (cardmarket_id_str, lang_short) → internal_sku desde el catálogo."""
+    cat = load_catalog()
+    idx: dict = {}
+    if "cardmarket_id" not in cat.columns or "language" not in cat.columns:
+        return idx
+    for sku, row in cat.iterrows():
+        key = (str(row["cardmarket_id"]).strip(), str(row["language"]).strip())
+        idx[key] = sku
+    return idx
+
+
+def _parse_labels_from_csv(file_bytes: bytes, cm_idx: dict) -> tuple[list, list]:
+    """
+    Parsea CSV de Cardmarket (o con internal_sku directo).
+    Devuelve (labels_list, unmatched_rows).
+    Cada label: {sku, name, lang, set_code, cn, condition}.
+    """
+    import csv as _csv
+    content = file_bytes.decode("utf-8-sig")
+    reader = _csv.DictReader(_io.StringIO(content))
+    labels_raw: list = []
+    unmatched: list  = []
+
+    for row in reader:
+        # Formato con internal_sku directo
+        if "internal_sku" in row and row["internal_sku"].strip():
+            sku = row["internal_sku"].strip()
+            qty = int(row.get("qty", row.get("quantity", 1)) or 1)
+            labels_raw.append({
+                "sku":      sku,
+                "name":     row.get("card_name", row.get("name", sku)),
+                "lang":     row.get("lang", row.get("language", "")),
+                "set_code": row.get("set_code", row.get("setCode", "")),
+                "cn":       row.get("cn", ""),
+                "condition": row.get("condition", ""),
+                "_qty":     qty,
+            })
+            continue
+
+        # Formato Cardmarket export
+        lang_full = row.get("language", "")
+        lang = _LANG_MAP_FULL.get(lang_full, lang_full)
+        cm_id = str(row.get("cardmarketId", row.get("cardmarket_id", ""))).strip()
+        qty = int(row.get("quantity", 1) or 1)
+        sku = cm_idx.get((cm_id, lang))
+        if not sku:
+            unmatched.append(f"{row.get('name','?')} ({lang}) — cardmarketId {cm_id}")
+            sku = cm_id  # usar cm_id como fallback para al menos dibujar barcode
+        labels_raw.append({
+            "sku":      sku,
+            "name":     row.get("name", ""),
+            "lang":     lang,
+            "set_code": row.get("setCode", row.get("set_code", "")).upper(),
+            "cn":       row.get("cn", ""),
+            "condition": row.get("condition", ""),
+            "_qty":     qty,
+        })
+
+    release_dates = _load_release_dates()
+    labels_raw.sort(key=lambda e: _label_sort_key(e, release_dates))
+
+    labels: list = []
+    for entry in labels_raw:
+        qty = entry.pop("_qty", 1)
+        for _ in range(qty):
+            labels.append(dict(entry))
+    return labels, unmatched
+
+
+# ─────────────────────────────────────────────
 # SESSION STATE
 # ─────────────────────────────────────────────
 if "last_msg" not in st.session_state:
@@ -669,6 +939,9 @@ st.markdown(
 """,
     unsafe_allow_html=True,
 )
+
+_tab_scan, _tab_labels = st.tabs(["⚡  Escáner", "🏷️  Etiquetas"])
+_tab_scan.__enter__()   # todo el contenido siguiente va al tab de escáner
 
 # ─────────────────────────────────────────────
 # B) COMPONENTE DE ESCANEO
@@ -1172,3 +1445,137 @@ st.markdown(
     f'<div class="prisma-footer">Prisma Scan · {TODAY} · v2.0</div>',
     unsafe_allow_html=True,
 )
+
+_tab_scan.__exit__(None, None, None)   # fin del tab de escáner
+
+# ─────────────────────────────────────────────
+# G) TAB ETIQUETAS
+# ─────────────────────────────────────────────
+with _tab_labels:
+    st.markdown('<p class="summary-title" style="margin-bottom:0.8rem;">Generador de etiquetas</p>', unsafe_allow_html=True)
+
+    _lbl_mode = st.radio(
+        "Origen de los datos",
+        ["📁  Subir CSV", "🔍  Selección manual"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="lbl_mode",
+    )
+
+    # ── MODO CSV ──────────────────────────────────────────────────────────
+    if _lbl_mode == "📁  Subir CSV":
+        st.markdown(
+            '<span style="font-size:0.8rem;color:var(--prisma-muted);">'
+            'Acepta exportaciones de Cardmarket o CSVs con columna <code>internal_sku</code>.</span>',
+            unsafe_allow_html=True,
+        )
+        _uploaded = st.file_uploader("Sube el CSV", type=["csv"], key="lbl_csv_upload")
+        if _uploaded is not None:
+            try:
+                _cm_idx = _build_cm_index()
+                _labels, _unmatched = _parse_labels_from_csv(_uploaded.read(), _cm_idx)
+                if _unmatched:
+                    with st.expander(f"⚠️ {len(_unmatched)} SKU(s) sin coincidir en inventory_current"):
+                        for _u in _unmatched:
+                            st.markdown(f"- {_u}")
+                if _labels:
+                    st.markdown(
+                        f'<div class="alert alert-ok">{len(_labels)} etiqueta(s) listas · '
+                        f'{sum(1 for l in _labels if l.get("condition","").upper() != "NM")} no-NM</div>',
+                        unsafe_allow_html=True,
+                    )
+                    # Preview tabla
+                    _prev = pd.DataFrame(_labels)[["sku", "name", "lang", "set_code", "cn", "condition"]].rename(
+                        columns={"sku": "internal_sku", "name": "nombre", "lang": "idioma",
+                                 "set_code": "set", "condition": "condición"}
+                    )
+                    st.dataframe(_prev, use_container_width=True, hide_index=True, height=220)
+                    _pdf_bytes = _generate_label_pdf(_labels)
+                    _fname = f"etiquetas_{_uploaded.name.replace('.csv','')}.pdf"
+                    st.download_button(
+                        "⬇️  Descargar PDF de etiquetas",
+                        data=_pdf_bytes,
+                        file_name=_fname,
+                        mime="application/pdf",
+                        use_container_width=True,
+                        type="primary",
+                    )
+                else:
+                    st.markdown('<div class="alert alert-warn">No se encontraron filas válidas en el CSV.</div>', unsafe_allow_html=True)
+            except Exception as _e:
+                st.error(f"Error al procesar el CSV: {_e}")
+
+    # ── MODO SELECCIÓN MANUAL ─────────────────────────────────────────────
+    else:
+        _inv_lbl = catalog.reset_index()
+        if "qty" in _inv_lbl.columns:
+            _inv_lbl = _inv_lbl[pd.to_numeric(_inv_lbl["qty"], errors="coerce").fillna(0) > 0]
+
+        if _inv_lbl.empty:
+            st.markdown('<div class="alert alert-warn">Inventario no disponible.</div>', unsafe_allow_html=True)
+        else:
+            _la, _lb = st.columns(2)
+            with _la:
+                _lbl_name = st.text_input("Nombre carta / Pokémon", placeholder="Charizard…", key="lbl_name")
+            with _lb:
+                _lbl_set_opts = ["Todas"] + sorted(_inv_lbl["set_name"].dropna().unique().tolist())
+                _lbl_set = st.selectbox("Expansión", _lbl_set_opts, key="lbl_set")
+            _lc, _ld = st.columns(2)
+            with _lc:
+                _lbl_lang_opts = ["Todos"] + sorted(_inv_lbl["language"].dropna().unique().tolist())
+                _lbl_lang = st.selectbox("Idioma", _lbl_lang_opts, key="lbl_lang")
+            with _ld:
+                _lbl_rar_opts = ["Todas"] + sorted(_inv_lbl["business_rarity"].dropna().unique().tolist())
+                _lbl_rar = st.selectbox("Rareza", _lbl_rar_opts, key="lbl_rar")
+
+            _mask_lbl = pd.Series(True, index=_inv_lbl.index)
+            if _lbl_name:
+                _mask_lbl &= _inv_lbl["display_name"].str.contains(_lbl_name, case=False, na=False)
+            if _lbl_set != "Todas":
+                _mask_lbl &= _inv_lbl["set_name"] == _lbl_set
+            if _lbl_lang != "Todos":
+                _mask_lbl &= _inv_lbl["language"] == _lbl_lang
+            if _lbl_rar != "Todas":
+                _mask_lbl &= _inv_lbl["business_rarity"] == _lbl_rar
+
+            _res_lbl = _inv_lbl[_mask_lbl]
+            if _res_lbl.empty:
+                st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin resultados — ajusta los filtros</span>', unsafe_allow_html=True)
+            else:
+                # Cantidad de etiquetas por carta (por defecto qty del inventario)
+                _qty_col = "qty" if "qty" in _res_lbl.columns else None
+                _lbl_qty = st.number_input(
+                    f"Etiquetas por carta ({len(_res_lbl)} resultado(s))",
+                    min_value=1, max_value=50, value=1, step=1, key="lbl_qty",
+                )
+                _preview_lbl = _res_lbl[["internal_sku", "display_name", "language", "business_rarity", "set_name", "cn"]].rename(
+                    columns={"display_name": "nombre", "language": "idioma",
+                             "business_rarity": "rareza", "set_name": "expansión"}
+                )
+                st.dataframe(_preview_lbl.head(100), use_container_width=True, hide_index=True, height=220)
+                st.markdown(f'<span style="color:var(--prisma-muted);font-size:0.72rem;">{len(_res_lbl)} carta(s) × {_lbl_qty} = {len(_res_lbl)*_lbl_qty} etiqueta(s)</span>', unsafe_allow_html=True)
+
+                if st.button("Generar PDF", use_container_width=True, type="primary", key="lbl_gen_manual"):
+                    _release_dates = _load_release_dates()
+                    _labels_manual = []
+                    for _, _r in _res_lbl.iterrows():
+                        _entry = {
+                            "sku":       _r["internal_sku"],
+                            "name":      _r.get("display_name", ""),
+                            "lang":      _r.get("language", ""),
+                            "set_code":  _r.get("set_code", ""),
+                            "cn":        _r.get("cn", ""),
+                            "condition": _r.get("condition", ""),
+                        }
+                        for _ in range(_lbl_qty):
+                            _labels_manual.append(dict(_entry))
+                    _labels_manual.sort(key=lambda e: _label_sort_key(e, _release_dates))
+                    _pdf_manual = _generate_label_pdf(_labels_manual)
+                    st.download_button(
+                        "⬇️  Descargar PDF",
+                        data=_pdf_manual,
+                        file_name=f"etiquetas_manual_{TODAY}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key="lbl_dl_manual",
+                    )
