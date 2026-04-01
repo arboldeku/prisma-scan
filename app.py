@@ -685,8 +685,14 @@ def _load_release_dates() -> dict:
                     date_str = row[1].strip()
                     try:
                         from datetime import datetime as _dt
-                        d = _dt.strptime(date_str, "%d %b %y")
-                        dates[code] = d
+                        # Soportar YYYY-MM-DD y el antiguo formato "01 Jan 25"
+                        for fmt in ("%Y-%m-%d", "%d %b %y", "%d %b %Y"):
+                            try:
+                                d = _dt.strptime(date_str, fmt)
+                                dates[code] = d
+                                break
+                            except ValueError:
+                                continue
                     except (ValueError, TypeError):
                         pass
         except Exception:
@@ -786,7 +792,9 @@ def _draw_label(c, data: dict):
     c.setLineWidth(0.6)
     c.line(0, top_y, W, top_y)
 
-    # Barcode — sin clipping (debug)
+    # Barcode — resetear color a negro antes (el badge deja fillColor=white)
+    c.setFillColor(_black)
+    c.setStrokeColor(_black)
     bc_probe = _code128.Code128(data["sku"], barHeight=1, barWidth=1,
                                 humanReadable=False, lquiet=0, rquiet=0)
     bc_margin = 2 * _mm
@@ -796,8 +804,12 @@ def _draw_label(c, data: dict):
                               barFillColor=_black, lquiet=0, rquiet=0)
     bc_y = (top_y - _BC_H) / 2
 
-    # Dibujar SIN clipping para ver si es el culpable
+    c.saveState()
+    p = c.beginPath()
+    p.rect(0, 0, W, top_y)
+    c.clipPath(p, stroke=0)
     bc_obj.drawOn(c, bc_margin, bc_y)
+    c.restoreState()
 
 
 def _generate_label_pdf(labels: list) -> bytes:
