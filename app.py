@@ -786,27 +786,22 @@ def _draw_label(c, data: dict):
     c.setLineWidth(0.6)
     c.line(0, top_y, W, top_y)
 
-    # Barcode — sin clipping, ancho máximo con margen
-    try:
-        bc_margin = 2.5 * _mm
-        available_w = W - 2 * bc_margin
-        # Crear barcode probe para medir
-        bc_probe = _code128.Code128(data["sku"], barHeight=1, barWidth=1,
-                                    humanReadable=False, lquiet=0, rquiet=0)
-        # Calcular barWidth: queremos que el barcode ocupe (available_w)
-        # Ancho total = width_in_modules * barWidth
-        # barWidth = available_w / width_in_modules
-        bar_w = max(0.5, available_w / bc_probe.width if bc_probe.width > 0 else 0.8)
-        # Limitar barWidth a máximo 1.5 para legibilidad
-        bar_w = min(1.5, bar_w)
+    # Barcode — código exacto del script original probado
+    bc_probe = _code128.Code128(data["sku"], barHeight=1, barWidth=1,
+                                humanReadable=False, lquiet=0, rquiet=0)
+    bc_margin = 2 * _mm
+    bar_w = (W - 2 * bc_margin) / bc_probe.width
+    bc_obj = _code128.Code128(data["sku"], barHeight=_BC_H - 1 * _mm,
+                              barWidth=bar_w, humanReadable=False,
+                              barFillColor=_black, lquiet=0, rquiet=0)
+    bc_y = (top_y - _BC_H) / 2
 
-        bc_obj = _code128.Code128(data["sku"], barHeight=_BC_H - 1.5 * _mm,
-                                  barWidth=bar_w, humanReadable=False,
-                                  barFillColor=_black, lquiet=0, rquiet=0)
-        bc_y = (top_y - (_BC_H - 1.5 * _mm)) / 2
-        bc_obj.drawOn(c, bc_margin, bc_y)
-    except Exception:
-        pass  # si falla el barcode, continuar sin él
+    c.saveState()
+    p = c.beginPath()
+    p.rect(0, 0, W, top_y)
+    c.clipPath(p, stroke=0)
+    bc_obj.drawOn(c, bc_margin, bc_y)
+    c.restoreState()
 
 
 def _generate_label_pdf(labels: list) -> bytes:
