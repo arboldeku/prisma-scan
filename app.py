@@ -725,15 +725,23 @@ def _load_release_dates() -> dict:
 
 
 def _label_sort_key(entry: dict, release_dates: dict) -> tuple:
-    """Clave de ordenación: grupo(occ/jp) → fecha desc → cn numérico."""
+    """Clave de ordenación: grupo(occ/jp) → fecha desc → set_code → cn numérico."""
     lang = entry.get("lang", "")
     group = 0 if lang in _LANGS_OCC_SET else 1
     sc = entry.get("set_code", "").upper()
+    # Obtener fecha; si no existe, usar set_code alfabético como fallback
     d = release_dates.get(sc)
-    date_ts = -d.timestamp() if d else 1e12
+    if d:
+        date_ts = -d.timestamp()  # Negativo para orden descendente
+        set_sort = ""  # Si tiene fecha, no usar set_code
+    else:
+        # Si no tiene fecha, usar set_code para mantener orden de expansión
+        date_ts = 1e12
+        set_sort = sc
+    # Extraer número de carta
     m = _re.search(r"(\d+)", entry.get("cn", ""))
     cn_num = int(m.group(1)) if m else 9999
-    return (group, date_ts, cn_num)
+    return (group, date_ts, set_sort, cn_num)
 
 
 def _draw_label(c, data: dict):
