@@ -801,22 +801,21 @@ def _draw_label(c, data: dict):
         bc_sku = str(data.get("sku", "")).strip()
         if bc_sku:
             # Generate barcode as PNG image in memory
-            bc_gen = _barcode.get("code128", bc_sku, module_height=2.0)
+            bc_gen = _barcode.get("code128", bc_sku)
             bc_img_buf = _io.BytesIO()
-            bc_gen.save(bc_img_buf, format="png")
+            bc_gen.save(bc_img_buf)
             bc_img_buf.seek(0)
             # Draw barcode image on canvas
             c.drawImage(bc_img_buf, bc_margin_x, bc_y,
                        width=bc_width, height=bc_height,
-                       preserveAspectRatio=True, anchor='sw')
+                       preserveAspectRatio=True)
         else:
             # DEBUG: RED rect if no SKU
             c.setFillColor(_HexColor("#FF0000"))
             c.rect(bc_margin_x, bc_y, bc_width, bc_height, fill=1, stroke=0)
     except Exception as e:
-        # DEBUG: BLUE rect if barcode generation/draw fails
-        import sys
-        print(f"ERROR generating barcode for {data.get('sku', 'UNKNOWN')}: {type(e).__name__}: {e}", file=sys.stderr)
+        # DEBUG: Store error message to show later
+        data['_barcode_error'] = f"{type(e).__name__}: {str(e)[:100]}"
         c.setFillColor(_HexColor("#0000FF"))
         c.rect(bc_margin_x, bc_y, bc_width, bc_height, fill=1, stroke=0)
 
