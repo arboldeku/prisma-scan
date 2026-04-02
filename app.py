@@ -628,7 +628,6 @@ from reportlab.lib.colors import black as _black, white as _white, HexColor as _
 from reportlab.pdfbase.pdfmetrics import stringWidth as _stringWidth
 from reportlab.pdfbase.ttfonts import TTFont as _TTFont
 from reportlab.pdfbase import pdfmetrics as _pdfmetrics
-import barcode as _barcode
 
 _LBL_W  = 60 * _mm
 _LBL_H  = 30 * _mm
@@ -794,52 +793,49 @@ def _draw_label(c, data: dict):
 
     # Barcode using python-barcode library
     bc_y = (top_y - _BC_H) / 2
-    bc_margin_x = 2 * _mm
-    bc_width = W - 2 * bc_margin_x
-    bc_height = _BC_H - 1 * _mm
-    try:
-        bc_sku = str(data.get("sku", "")).strip()
-        if bc_sku:
-            # Generate barcode using ImageWriter
-            import tempfile
-            from barcode.writer import ImageWriter
-            bc_gen = _barcode.get("code128", bc_sku)
-            writer = ImageWriter()
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                tmp_path = tmp.name[:-4]  # Remove .png extension
-                bc_gen.write(tmp_path, options={'write_text': False})
-                tmp_png = tmp_path + ".png"
-            # Draw barcode image on canvas from file
-            c.drawImage(tmp_png, bc_margin_x, bc_y,
-                       width=bc_width, height=bc_height,
-                       preserveAspectRatio=True)
-            # Clean up
-            import os
-            try:
-                os.remove(tmp_png)
-            except:
-                pass
-        else:
-            # DEBUG: RED rect if no SKU
-            c.setFillColor(_HexColor("#FF0000"))
-            c.rect(bc_margin_x, bc_y, bc_width, bc_height, fill=1, stroke=0)
-    except Exception as e:
-        # DEBUG: Store error message to show later
-        data['_barcode_error'] = f"{type(e).__name__}: {str(e)[:100]}"
-        c.setFillColor(_HexColor("#0000FF"))
-        c.rect(bc_margin_x, bc_y, bc_width, bc_height, fill=1, stroke=0)
+    # Barcode using reportlab Code128 (works reliably with file-based Canvas)
+    from reportlab.graphics.barcode import code128 as _code128_local
+    bc_sku = str(data.get("sku", "")).strip()
+    if bc_sku:
+        bc_probe = _code128_local.Code128(bc_sku, barHeight=1, barWidth=1,
+                                           humanReadable=False, lquiet=0, rquiet=0)
+        bc_margin = 2 * _mm
+        bar_w = (W - 2 * bc_margin) / bc_probe.width
+        bc_obj = _code128_local.Code128(bc_sku, barHeight=_BC_H - 1 * _mm,
+                                         barWidth=bar_w, humanReadable=False,
+                                         lquiet=0, rquiet=0)
+        c.saveState()
+        p = c.beginPath()
+        p.rect(0, 0, W, top_y)
+        c.clipPath(p, stroke=0)
+        bc_obj.drawOn(c, bc_margin, bc_y)
+        c.restoreState()
 
 
 def _generate_label_pdf(labels: list) -> bytes:
     """Genera el PDF con todas las etiquetas y devuelve los bytes."""
-    buf = _io.BytesIO()
-    c = _canvas.Canvas(buf, pagesize=(_LBL_W, _LBL_H))
-    for i, data in enumerate(labels):
-        _draw_label(c, data)
-        if i < len(labels) - 1:
-            c.showPage()
-    c.save()
-    return buf.getvalue()
+    import tempfile
+    # Use temp file instead of BytesIO - Code128 works better with file paths
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        c = _canvas.Canvas(tmp_path, pagesize=(_LBL_W, _LBL_H))
+        for i, data in enumerate(labels):
+            _draw_label(c, data)
+            if i < len(labels) - 1:
+                c.showPage()
+        c.save()
+        # Read PDF from file and return as bytes
+        with open(tmp_path, "rb") as f:
+            pdf_bytes = f.read()
+        return pdf_bytes
+    finally:
+        # Clean up temp file
+        import os
+        try:
+            os.remove(tmp_path)
+        except:
+            pass
 
 
 @st.cache_data
