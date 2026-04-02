@@ -637,10 +637,35 @@ _BC_H   = 15 * _mm
 _PAD    =  1 * _mm
 
 _LANG_MAP_FULL = {
-    "English": "ENG", "Spanish": "ESP", "Korean": "KOR",
-    "Japanese": "JPN", "French": "FRA", "German": "DEU",
-    "Italian": "ITA", "Portuguese": "POR",
+    # English variants
+    "English": "ENG", "english": "ENG", "eng": "ENG", "en": "ENG",
+    # Spanish variants
+    "Spanish": "ESP", "spanish": "ESP", "esp": "ESP", "es": "ESP",
+    # Korean variants
+    "Korean": "KOR", "korean": "KOR", "kor": "KOR", "ko": "KOR",
+    # Japanese variants (both JPN and JAP normalize to JPN)
+    "Japanese": "JPN", "japanese": "JPN", "jpn": "JPN", "jap": "JPN", "jp": "JPN", "ja": "JPN",
+    # French variants
+    "French": "FRA", "french": "FRA", "fra": "FRA", "fr": "FRA",
+    # German variants
+    "German": "DEU", "german": "DEU", "deu": "DEU", "de": "DEU",
+    # Italian variants
+    "Italian": "ITA", "italian": "ITA", "ita": "ITA", "it": "ITA",
+    # Portuguese variants
+    "Portuguese": "POR", "portuguese": "POR", "por": "POR", "pt": "POR",
 }
+
+def _normalize_lang(lang_str: str) -> str:
+    """Normaliza cualquier código/nombre de idioma a formato estándar."""
+    if not lang_str:
+        return ""
+    lang_lower = lang_str.strip().lower()
+    # Buscar en el mapeo (es case-insensitive por el .lower())
+    normalized = _LANG_MAP_FULL.get(lang_str.strip()) or _LANG_MAP_FULL.get(lang_lower)
+    # Si no está en el mapeo, intentar devolver en mayúsculas si es código corto
+    if not normalized:
+        normalized = lang_lower.upper() if len(lang_lower) <= 3 else lang_str.strip()
+    return normalized
 _LANGS_OCC_SET = {"ENG", "ESP", "FRA", "DEU", "ITA", "POR"}
 
 
@@ -843,7 +868,9 @@ def _build_cm_index() -> dict:
     if "cardmarket_id" not in cat.columns or "language" not in cat.columns:
         return idx
     for sku, row in cat.iterrows():
-        key = (str(row["cardmarket_id"]).strip(), str(row["language"]).strip())
+        cm_id = str(row["cardmarket_id"]).strip()
+        lang = _normalize_lang(str(row["language"]))
+        key = (cm_id, lang)
         idx[key] = sku
     return idx
 
@@ -889,7 +916,8 @@ def _parse_labels_from_csv(file_bytes: bytes, cm_idx: dict) -> tuple[list, list]
         # Formato Cardmarket export (cardmarketId + language + setCode + cn + condition)
         # Intentar columnas de idioma en varios formatos: language, idioma, lang
         lang_full = (row.get("language") or row.get("idioma") or row.get("lang") or "").strip()
-        lang = _LANG_MAP_FULL.get(lang_full, lang_full)
+        # Normalizar idioma (maneja JPN, JAP, Japanese, japanese, etc.)
+        lang = _normalize_lang(lang_full)
         cm_id = str(row.get("cardmarketId", row.get("cardmarket_id", ""))).strip()
         qty = int(row.get("quantity", 1) or 1)
 
