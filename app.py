@@ -629,7 +629,6 @@ from reportlab.pdfbase.pdfmetrics import stringWidth as _stringWidth
 from reportlab.pdfbase.ttfonts import TTFont as _TTFont
 from reportlab.pdfbase import pdfmetrics as _pdfmetrics
 import barcode as _barcode
-from PIL import Image as _Image
 
 _LBL_W  = 60 * _mm
 _LBL_H  = 30 * _mm
@@ -793,22 +792,8 @@ def _draw_label(c, data: dict):
     c.setLineWidth(0.6)
     c.line(0, top_y, W, top_y)
 
-    # Barcode — resetear color a negro antes (el badge deja fillColor=white)
-    c.setFillColor(_black)
-    c.setStrokeColor(_black)
-    bc_probe = _code128.Code128(data["sku"], barHeight=1, barWidth=1,
-                                humanReadable=False, lquiet=0, rquiet=0)
-    bc_margin = 2 * _mm
-    if bc_probe.width > 0:
-        bar_w = (W - 2 * bc_margin) / bc_probe.width
-    else:
-        bar_w = 0.5
-    bc_obj = _code128.Code128(data["sku"], barHeight=_BC_H - 1 * _mm,
-                              barWidth=bar_w, humanReadable=False,
-                              barFillColor=_black, barStrokeColor=_black,
-                              lquiet=0, rquiet=0)
-    bc_y = (top_y - _BC_H) / 2
     # Barcode using python-barcode library
+    bc_y = (top_y - _BC_H) / 2
     try:
         bc_sku = str(data.get("sku", "")).strip()
         if bc_sku:
