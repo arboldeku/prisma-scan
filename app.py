@@ -812,11 +812,17 @@ def _draw_label(c, data: dict):
         bx = W - _PAD - badge_w - 0.5 * _mm
         by = top_y + _TOP_H * 0.04
         if cond == "NM":
-            c.setFillColor(_HexColor("#888888"))
+            c.setFillColor(_white)
+            c.setStrokeColor(_black)
+            c.setLineWidth(0.4)
+            c.roundRect(bx, by, badge_w, badge_h, 1 * _mm, fill=1, stroke=1)
+            c.setFillColor(_black)  # Texto negro para fondo blanco
         else:
             c.setFillColor(_HexColor("#c00000"))
-        c.roundRect(bx, by, badge_w, badge_h, 1 * _mm, fill=1, stroke=0)
-        c.setFillColor(_white)
+            c.setStrokeColor(_HexColor("#c00000"))
+            c.setLineWidth(0)
+            c.roundRect(bx, by, badge_w, badge_h, 1 * _mm, fill=1, stroke=0)
+            c.setFillColor(_white)  # Texto blanco para fondo rojo
         c.setFont("Helvetica-Bold", badge_fs)
         c.drawString(bx + 1 * _mm, by + badge_h * 0.25, badge_txt)
 
