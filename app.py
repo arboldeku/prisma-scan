@@ -815,6 +815,8 @@ def _draw_label(c, data: dict):
             c.rect(bc_margin_x, bc_y, bc_width, bc_height, fill=1, stroke=0)
     except Exception as e:
         # DEBUG: BLUE rect if barcode generation/draw fails
+        import sys
+        print(f"ERROR generating barcode for {data.get('sku', 'UNKNOWN')}: {type(e).__name__}: {e}", file=sys.stderr)
         c.setFillColor(_HexColor("#0000FF"))
         c.rect(bc_margin_x, bc_y, bc_width, bc_height, fill=1, stroke=0)
 
