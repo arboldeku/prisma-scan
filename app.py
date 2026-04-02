@@ -794,12 +794,12 @@ def _draw_label(c, data: dict):
 
     # Barcode using python-barcode library
     bc_y = (top_y - _BC_H) / 2
+    bc_margin_x = 2 * _mm
+    bc_width = W - 2 * bc_margin_x
+    bc_height = _BC_H - 1 * _mm
     try:
         bc_sku = str(data.get("sku", "")).strip()
         if bc_sku:
-            bc_margin_x = 2 * _mm
-            bc_width = W - 2 * bc_margin_x
-            bc_height = _BC_H - 1 * _mm
             # Generate barcode as PNG image in memory
             bc_gen = _barcode.get("code128", bc_sku, module_height=2.0)
             bc_img_buf = _io.BytesIO()
@@ -809,9 +809,14 @@ def _draw_label(c, data: dict):
             c.drawImage(bc_img_buf, bc_margin_x, bc_y,
                        width=bc_width, height=bc_height,
                        preserveAspectRatio=True, anchor='sw')
+        else:
+            # DEBUG: RED rect if no SKU
+            c.setFillColor(_HexColor("#FF0000"))
+            c.rect(bc_margin_x, bc_y, bc_width, bc_height, fill=1, stroke=0)
     except Exception as e:
-        # Fallback: if barcode fails, just skip (was blank anyway)
-        pass
+        # DEBUG: BLUE rect if barcode generation/draw fails
+        c.setFillColor(_HexColor("#0000FF"))
+        c.rect(bc_margin_x, bc_y, bc_width, bc_height, fill=1, stroke=0)
 
 
 def _generate_label_pdf(labels: list) -> bytes:
