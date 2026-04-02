@@ -887,7 +887,8 @@ def _parse_labels_from_csv(file_bytes: bytes, cm_idx: dict) -> tuple[list, list]
             continue
 
         # Formato Cardmarket export (cardmarketId + language + setCode + cn + condition)
-        lang_full = row.get("language", "").strip()
+        # Intentar columnas de idioma en varios formatos: language, idioma, lang
+        lang_full = (row.get("language") or row.get("idioma") or row.get("lang") or "").strip()
         lang = _LANG_MAP_FULL.get(lang_full, lang_full)
         cm_id = str(row.get("cardmarketId", row.get("cardmarket_id", ""))).strip()
         qty = int(row.get("quantity", 1) or 1)
@@ -909,11 +910,11 @@ def _parse_labels_from_csv(file_bytes: bytes, cm_idx: dict) -> tuple[list, list]
 
         labels_raw.append({
             "sku":      sku,
-            "name":     row.get("name", ""),
+            "name":     row.get("name") or row.get("nombre") or "",
             "lang":     lang,
-            "set_code": row.get("setCode", row.get("set_code", "")).upper(),
-            "cn":       row.get("cn", ""),
-            "condition": row.get("condition", ""),
+            "set_code": (row.get("setCode") or row.get("set_code") or row.get("set") or "").upper(),
+            "cn":       row.get("cn") or "",
+            "condition": row.get("condition") or row.get("condición") or "",
             "_qty":     qty,
         })
 
