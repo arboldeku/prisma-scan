@@ -791,25 +791,22 @@ def _draw_label(c, data: dict):
     c.setLineWidth(0.6)
     c.line(0, top_y, W, top_y)
 
-    # Barcode using python-barcode library
-    bc_y = (top_y - _BC_H) / 2
-    # Barcode using reportlab Code128 (works reliably with file-based Canvas)
+    # Barcode — el badge deja fillColor=white; resetear a negro antes
     from reportlab.graphics.barcode import code128 as _code128_local
     bc_sku = str(data.get("sku", "")).strip()
     if bc_sku:
-        bc_probe = _code128_local.Code128(bc_sku, barHeight=1, barWidth=1,
-                                           humanReadable=False, lquiet=0, rquiet=0)
+        bc_y = (top_y - _BC_H) / 2
         bc_margin = 2 * _mm
+        bc_probe = _code128_local.Code128(bc_sku, barHeight=1, barWidth=1,
+                                          humanReadable=False, lquiet=0, rquiet=0)
         bar_w = (W - 2 * bc_margin) / bc_probe.width
         bc_obj = _code128_local.Code128(bc_sku, barHeight=_BC_H - 1 * _mm,
-                                         barWidth=bar_w, humanReadable=False,
-                                         lquiet=0, rquiet=0)
-        c.saveState()
-        p = c.beginPath()
-        p.rect(0, 0, W, top_y)
-        c.clipPath(p, stroke=0)
+                                        barWidth=bar_w, humanReadable=False,
+                                        barFillColor=_black, lquiet=0, rquiet=0)
+        # CRÍTICO: resetear a negro — el badge deja el canvas en fillColor=white
+        c.setFillColor(_black)
+        c.setStrokeColor(_black)
         bc_obj.drawOn(c, bc_margin, bc_y)
-        c.restoreState()
 
 
 def _generate_label_pdf(labels: list) -> bytes:
