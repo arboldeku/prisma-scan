@@ -625,10 +625,11 @@ import re as _re
 from reportlab.pdfgen import canvas as _canvas
 from reportlab.lib.units import mm as _mm
 from reportlab.lib.colors import black as _black, white as _white, HexColor as _HexColor
-from reportlab.graphics.barcode import code128 as _code128
 from reportlab.pdfbase.pdfmetrics import stringWidth as _stringWidth
 from reportlab.pdfbase.ttfonts import TTFont as _TTFont
 from reportlab.pdfbase import pdfmetrics as _pdfmetrics
+import barcode as _barcode
+from PIL import Image as _Image
 
 _LBL_W  = 60 * _mm
 _LBL_H  = 30 * _mm
@@ -807,11 +808,25 @@ def _draw_label(c, data: dict):
                               barFillColor=_black, barStrokeColor=_black,
                               lquiet=0, rquiet=0)
     bc_y = (top_y - _BC_H) / 2
-    # DEBUG: Draw black rectangle instead of barcode to test drawing system
-    c.setFillColor(_black)
-    c.setStrokeColor(_black)
-    c.setLineWidth(0)
-    c.rect(bc_margin, bc_y, W - 2 * bc_margin, _BC_H - 1 * _mm, fill=1, stroke=0)
+    # Barcode using python-barcode library
+    try:
+        bc_sku = str(data.get("sku", "")).strip()
+        if bc_sku:
+            bc_margin_x = 2 * _mm
+            bc_width = W - 2 * bc_margin_x
+            bc_height = _BC_H - 1 * _mm
+            # Generate barcode as PNG image in memory
+            bc_gen = _barcode.get("code128", bc_sku, module_height=2.0)
+            bc_img_buf = _io.BytesIO()
+            bc_gen.save(bc_img_buf, format="png")
+            bc_img_buf.seek(0)
+            # Draw barcode image on canvas
+            c.drawImage(bc_img_buf, bc_margin_x, bc_y,
+                       width=bc_width, height=bc_height,
+                       preserveAspectRatio=True, anchor='sw')
+    except Exception as e:
+        # Fallback: if barcode fails, just skip (was blank anyway)
+        pass
 
 
 def _generate_label_pdf(labels: list) -> bytes:
