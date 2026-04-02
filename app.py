@@ -875,6 +875,29 @@ def _build_cm_index() -> dict:
     return idx
 
 
+def _xlsx_to_csv_bytes(xlsx_bytes: bytes) -> bytes:
+    """Convierte archivo XLSX a CSV bytes."""
+    import tempfile
+    # Guardar XLSX a archivo temporal
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp_xlsx:
+        tmp_xlsx.write(xlsx_bytes)
+        tmp_xlsx_path = tmp_xlsx.name
+    try:
+        # Leer XLSX con pandas
+        df = pd.read_excel(tmp_xlsx_path, sheet_name=0)
+        # Convertir a CSV en memoria
+        csv_buf = _io.StringIO()
+        df.to_csv(csv_buf, index=False, encoding="utf-8")
+        csv_bytes = csv_buf.getvalue().encode("utf-8")
+        return csv_bytes
+    finally:
+        import os
+        try:
+            os.remove(tmp_xlsx_path)
+        except:
+            pass
+
+
 def _parse_labels_from_csv(file_bytes: bytes, cm_idx: dict) -> tuple[list, list]:
     """
     Parsea CSV de Cardmarket (o con internal_sku directo).
@@ -1540,11 +1563,15 @@ with _tab_labels:
             'Acepta exportaciones de Cardmarket o CSVs con columna <code>internal_sku</code>.</span>',
             unsafe_allow_html=True,
         )
-        _uploaded = st.file_uploader("Sube el CSV", type=["csv"], key="lbl_csv_upload")
+        _uploaded = st.file_uploader("Sube el CSV o XLSX", type=["csv", "xlsx"], key="lbl_csv_upload")
         if _uploaded is not None:
             try:
                 _cm_idx = _build_cm_index()
-                _labels, _unmatched = _parse_labels_from_csv(_uploaded.read(), _cm_idx)
+                _file_bytes = _uploaded.read()
+                # Convertir XLSX a CSV si es necesario
+                if _uploaded.name.lower().endswith(".xlsx"):
+                    _file_bytes = _xlsx_to_csv_bytes(_file_bytes)
+                _labels, _unmatched = _parse_labels_from_csv(_file_bytes, _cm_idx)
                 if _unmatched:
                     with st.expander(f"⚠️ {len(_unmatched)} SKU(s) sin coincidir en inventory_current"):
                         for _u in _unmatched:
