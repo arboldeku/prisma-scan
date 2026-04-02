@@ -807,13 +807,11 @@ def _draw_label(c, data: dict):
                               barFillColor=_black, barStrokeColor=_black,
                               lquiet=0, rquiet=0)
     bc_y = (top_y - _BC_H) / 2
-    # DEBUG: Draw border around barcode area to verify positioning
-    c.setFillColor(_white)
+    # DEBUG: Draw black rectangle instead of barcode to test drawing system
+    c.setFillColor(_black)
     c.setStrokeColor(_black)
-    c.setLineWidth(0.3)
-    c.rect(bc_margin - 0.5 * _mm, bc_y - 0.5 * _mm,
-           W - 2 * bc_margin + _mm, _BC_H + _mm, fill=0, stroke=1)
-    bc_obj.drawOn(c, bc_margin, bc_y)
+    c.setLineWidth(0)
+    c.rect(bc_margin, bc_y, W - 2 * bc_margin, _BC_H - 1 * _mm, fill=1, stroke=0)
 
 
 def _generate_label_pdf(labels: list) -> bytes:
