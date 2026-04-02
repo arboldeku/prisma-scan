@@ -800,20 +800,23 @@ def _draw_label(c, data: dict):
     try:
         bc_sku = str(data.get("sku", "")).strip()
         if bc_sku:
-            # Generate barcode as PNG image to temp file
+            # Generate barcode using ImageWriter
             import tempfile
+            from barcode.writer import ImageWriter
             bc_gen = _barcode.get("code128", bc_sku)
+            writer = ImageWriter()
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                bc_gen.save(tmp.name[:-4])  # barcode.save() removes extension
-                tmp_path = tmp.name
+                tmp_path = tmp.name[:-4]  # Remove .png extension
+                bc_gen.write(tmp_path, options={'write_text': False})
+                tmp_png = tmp_path + ".png"
             # Draw barcode image on canvas from file
-            c.drawImage(tmp_path, bc_margin_x, bc_y,
+            c.drawImage(tmp_png, bc_margin_x, bc_y,
                        width=bc_width, height=bc_height,
                        preserveAspectRatio=True)
             # Clean up
             import os
             try:
-                os.remove(tmp_path)
+                os.remove(tmp_png)
             except:
                 pass
         else:
