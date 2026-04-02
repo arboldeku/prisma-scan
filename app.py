@@ -800,15 +800,22 @@ def _draw_label(c, data: dict):
     try:
         bc_sku = str(data.get("sku", "")).strip()
         if bc_sku:
-            # Generate barcode as PNG image in memory
+            # Generate barcode as PNG image to temp file
+            import tempfile
             bc_gen = _barcode.get("code128", bc_sku)
-            bc_img_buf = _io.BytesIO()
-            bc_gen.save(bc_img_buf)
-            bc_img_buf.seek(0)
-            # Draw barcode image on canvas
-            c.drawImage(bc_img_buf, bc_margin_x, bc_y,
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                bc_gen.save(tmp.name[:-4])  # barcode.save() removes extension
+                tmp_path = tmp.name
+            # Draw barcode image on canvas from file
+            c.drawImage(tmp_path, bc_margin_x, bc_y,
                        width=bc_width, height=bc_height,
                        preserveAspectRatio=True)
+            # Clean up
+            import os
+            try:
+                os.remove(tmp_path)
+            except:
+                pass
         else:
             # DEBUG: RED rect if no SKU
             c.setFillColor(_HexColor("#FF0000"))
