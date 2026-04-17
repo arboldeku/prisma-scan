@@ -676,8 +676,11 @@ def toggle_sale_type(sale_event_id: str) -> None:
 
 def void_sale(original: dict) -> None:
     """
-    Anula una venta específica añadiendo fila void (nunca edita la original).
+    Anula una venta específica:
+    1. Añade fila void en Supabase (nunca edita la original)
+    2. Quita la fila completada del session_state para que desaparezca de la UI
     """
+    # Registrar void en Supabase
     save_sale({
         "sale_event_id":  str(uuid.uuid4()),
         "sale_ts":        datetime.now(TZ_MADRID).isoformat(timespec="seconds"),
@@ -698,6 +701,13 @@ def void_sale(original: dict) -> None:
         "discount_eur":   original.get("discount_eur", 0.0),
         "session_id":     original.get("session_id", ""),
     })
+    # Quitar la fila original del session_state (desaparece de la UI)
+    original_id = original.get("sale_event_id")
+    if original_id:
+        st.session_state.sales = [
+            s for s in st.session_state.sales
+            if s.get("sale_event_id") != original_id
+        ]
 
 
 # ─────────────────────────────────────────────
@@ -1293,52 +1303,6 @@ with st.expander("Entrada manual (etiqueta dañada)"):
                 st.rerun()
         else:
             st.warning("Rellena los tres campos.")
-
-# ─────────────────────────────────────────────
-# B5) BUSCADOR DE INVENTARIO
-# ─────────────────────────────────────────────
-with st.expander("🔍 Buscar carta en inventario"):
-    inv = catalog.reset_index()
-    # Solo cartas con stock disponible
-    if "qty" in inv.columns:
-        inv = inv[pd.to_numeric(inv["qty"], errors="coerce").fillna(0) > 0]
-
-    if inv.empty:
-        st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Inventario no disponible</span>', unsafe_allow_html=True)
-    else:
-        search_name = st.text_input("Nombre Pokémon", placeholder="Snorlax...", key="search_name")
-        s1, s2, s3 = st.columns(3)
-        with s1:
-            set_opts = ["Todas"] + sorted(inv["set_name"].dropna().unique().tolist())
-            search_set = st.selectbox("Expansión", set_opts, key="search_set")
-        with s2:
-            lang_opts = ["Todos"] + sorted(inv["language"].dropna().unique().tolist())
-            search_lang = st.selectbox("Idioma", lang_opts, key="search_lang")
-        with s3:
-            rar_opts = ["Todas"] + sorted(inv["business_rarity"].dropna().unique().tolist())
-            search_rar = st.selectbox("Rareza", rar_opts, key="search_rar")
-
-        has_filter = search_name or search_set != "Todas" or search_lang != "Todos" or search_rar != "Todas"
-        if has_filter:
-            mask = pd.Series(True, index=inv.index)
-            if search_name:
-                mask &= inv["display_name"].str.contains(search_name, case=False, na=False)
-            if search_set != "Todas":
-                mask &= inv["set_name"] == search_set
-            if search_lang != "Todos":
-                mask &= inv["language"] == search_lang
-            if search_rar != "Todas":
-                mask &= inv["business_rarity"] == search_rar
-            res = inv[mask][["internal_sku", "display_name", "language", "business_rarity", "set_name", "cn"]].rename(columns={
-                "display_name": "nombre", "language": "idioma", "business_rarity": "rareza", "set_name": "expansión",
-            })
-            if res.empty:
-                st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin resultados</span>', unsafe_allow_html=True)
-            else:
-                st.dataframe(res.head(100), use_container_width=True, hide_index=True)
-                st.markdown(f'<span style="color:var(--prisma-muted);font-size:0.72rem;">{len(res)} resultado(s)</span>', unsafe_allow_html=True)
-        else:
-            st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Introduce al menos un filtro para buscar</span>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # C) FEEDBACK DEL ÚLTIMO ESCANEO + ERRORES SHEETS
