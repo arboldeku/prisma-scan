@@ -548,6 +548,14 @@ def register_scan(sku: str) -> tuple[bool, str]:
             return False, f"SKU no encontrado: {sku}"
 
     product = ref_product if ref_product is not None else catalog.loc[sku]
+    # Obtener precio de catalog si existe
+    _price = 0.0
+    if sku in catalog.index and "listed_price_eur" in catalog.columns:
+        try:
+            _price = float(catalog.at[sku, "listed_price_eur"] or 0.0)
+        except (ValueError, TypeError):
+            _price = 0.0
+
     scan_mode = st.session_state.get("scan_mode", "venta")
     if scan_mode == "venta":
         payment_method  = st.session_state.get("payment_mode", "efectivo")
@@ -567,8 +575,8 @@ def register_scan(sku: str) -> tuple[bool, str]:
         "language":       product["language"],
         "business_rarity": product["business_rarity"],
         "qty":            1,
-        "unit_price":     0.0,
-        "gross_amount":   0.0,
+        "unit_price":     _price,
+        "gross_amount":   _price,
         "discount_eur":   0.0,
         "channel":        "physical_store",
         "source_system":  "store_scan",
@@ -578,7 +586,83 @@ def register_scan(sku: str) -> tuple[bool, str]:
         "money_direction": money_direction,
         "trade_amount":   0.0,
     })
-    return True, f"{product['display_name']} · {product['language']} · {product['business_rarity']}"
+    return True, f"{product['display_name']} · {product['language']} · {product['business_rarity']} · €{_price:.2f}"
+
+
+def register_scan_cm(sku: str) -> tuple[bool, str]:
+    """
+    Registra un escaneo para Cardmarket (más simple que Sant Antoni).
+    Sin cambios ni descuentos. Lee precio de inventory_current.
+    """
+    ref_product: dict | None = None
+
+    if sku not in catalog.index:
+        # Fallback 1: buscar por cardmarket_id
+        if "cardmarket_id" in catalog.columns:
+            matches = catalog[catalog["cardmarket_id"] == sku]
+            if not matches.empty:
+                sku = matches.index[0]
+
+        # Fallback 2: ref_cards
+        if sku not in catalog.index and not ref_cards_df.empty:
+            parts = sku.rsplit("-", 1)
+            if len(parts) == 2:
+                cm_id, suffix = parts
+                rc = ref_cards_df[ref_cards_df["cardmarket_id"] == cm_id]
+                if not rc.empty:
+                    langs, is_rev = _suffix_to_lang_rev(suffix)
+                    if langs:
+                        filtered = rc[rc["lang"].isin(langs)]
+                        if is_rev is not None:
+                            filtered_rev = filtered[filtered["is_reverse"].astype(str).str.lower() == str(is_rev).lower()]
+                            if not filtered_rev.empty:
+                                filtered = filtered_rev
+                        row = filtered.iloc[0] if not filtered.empty else rc.iloc[0]
+                    else:
+                        row = rc.iloc[0]
+                    ref_product = {
+                        "display_name":   row.get("card_name", sku),
+                        "language":       row.get("lang", ""),
+                        "business_rarity": row.get("rarity", ""),
+                    }
+
+        if sku not in catalog.index and ref_product is None:
+            return False, f"SKU no encontrado: {sku}"
+
+    product = ref_product if ref_product is not None else catalog.loc[sku]
+    # Obtener precio
+    _price = 0.0
+    if sku in catalog.index and "listed_price_eur" in catalog.columns:
+        try:
+            _price = float(catalog.at[sku, "listed_price_eur"] or 0.0)
+        except (ValueError, TypeError):
+            _price = 0.0
+
+    record = {
+        "sale_event_id":  str(uuid.uuid4()),
+        "sale_ts":        datetime.now(TZ_MADRID).isoformat(timespec="seconds"),
+        "session_id":     st.session_state.get("cm_session_id", ""),
+        "internal_sku":   sku,
+        "display_name":   product["display_name"],
+        "language":       product["language"],
+        "business_rarity": product["business_rarity"],
+        "qty":            1,
+        "unit_price":     _price,
+        "gross_amount":   _price,
+        "discount_eur":   0.0,
+        "channel":        "cardmarket",
+        "source_system":  "cm_scan",
+        "status":         "completed",
+        "sale_type":      "venta",
+        "payment_method": "ninguno",
+        "money_direction": "ninguno",
+        "trade_amount":   0.0,
+    }
+    # Guardar en cm_sales y en Supabase
+    st.session_state.cm_sales.append(record)
+    _write_to_supabase(record)
+
+    return True, f"{product['display_name']} · {product['language']} · €{_price:.2f}"
 
 
 def toggle_sale_type(sale_event_id: str) -> None:
@@ -1023,6 +1107,18 @@ if "session_discounts" not in st.session_state:
 if "cambio_amount" not in st.session_state:
     st.session_state.cambio_amount = 0.0
 
+# Cardmarket — session state independiente
+if "cm_sales" not in st.session_state:
+    st.session_state.cm_sales = []
+if "cm_session_id" not in st.session_state:
+    st.session_state.cm_session_id = str(uuid.uuid4())[:8]
+if "cm_scan_counter" not in st.session_state:
+    st.session_state.cm_scan_counter = 0
+if "cm_last_msg" not in st.session_state:
+    st.session_state.cm_last_msg = ""
+if "cm_last_ok" not in st.session_state:
+    st.session_state.cm_last_ok = True
+
 # ─────────────────────────────────────────────
 # CATÁLOGO
 # ─────────────────────────────────────────────
@@ -1048,7 +1144,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-_tab_scan, _tab_labels = st.tabs(["⚡  Escáner", "🏷️  Etiquetas"])
+_tab_scan, _tab_labels, _tab_cm = st.tabs(["⚡  Escáner", "🏷️  Etiquetas", "📦  Cardmarket"])
 _tab_scan.__enter__()   # todo el contenido siguiente va al tab de escáner
 
 # ─────────────────────────────────────────────
@@ -1717,3 +1813,149 @@ with _tab_labels:
                         use_container_width=True,
                         key="lbl_dl_manual",
                     )
+
+# ─────────────────────────────────────────────
+# H) TAB CARDMARKET
+# ─────────────────────────────────────────────
+with _tab_cm:
+    st.markdown('<p class="summary-title" style="margin-bottom:0.8rem;">Cardmarket</p>', unsafe_allow_html=True)
+
+    # ── Escáner BT ──────────────────────────────────────────────────────────
+    _cm_scanned = _scanner_input(key=f"scanner_cm_{st.session_state.cm_scan_counter}")
+    if _cm_scanned:
+        _cm_sku = str(_cm_scanned).strip().upper().replace("/", "-")
+        _cm_ok, _cm_msg = register_scan_cm(_cm_sku)
+        st.session_state.cm_last_msg = _cm_msg
+        st.session_state.cm_last_ok = _cm_ok
+        st.session_state.cm_scan_counter += 1
+        st.rerun()
+
+    # ── Feedback del último item ────────────────────────────────────────────
+    if st.session_state.cm_last_msg:
+        if st.session_state.cm_last_ok:
+            st.success(f"✓ {st.session_state.cm_last_msg}")
+        else:
+            st.error(f"✗ {st.session_state.cm_last_msg}")
+
+    # ── Tabla de ventas ─────────────────────────────────────────────────────
+    if st.session_state.cm_sales:
+        _cm_df = pd.DataFrame(st.session_state.cm_sales)[
+            ["display_name", "language", "set_name", "unit_price", "gross_amount"]
+        ].rename(columns={
+            "display_name": "Artículo",
+            "language": "Idioma",
+            "set_name": "Expansión",
+            "unit_price": "Precio",
+            "gross_amount": "Total",
+        })
+        st.dataframe(_cm_df, use_container_width=True, hide_index=True, height=250)
+        _cm_total = sum(s.get("gross_amount", 0.0) for s in st.session_state.cm_sales)
+        st.markdown(
+            f'<div style="background:var(--prisma-surface);padding:0.8rem;border-radius:0.4rem;">'
+            f'<strong>Total sesión:</strong> €{_cm_total:.2f} ({len(st.session_state.cm_sales)} artículos)'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin artículos escaneados aún</span>', unsafe_allow_html=True)
+
+    # ── Buscador manual ─────────────────────────────────────────────────────
+    with st.expander("🔍  Buscar y añadir manualmente"):
+        _cm_inv = catalog.reset_index()
+        if "qty" in _cm_inv.columns:
+            _cm_inv = _cm_inv[pd.to_numeric(_cm_inv["qty"], errors="coerce").fillna(0) > 0]
+
+        if _cm_inv.empty:
+            st.markdown('<span style="color:var(--prisma-muted);">Inventario no disponible</span>', unsafe_allow_html=True)
+        else:
+            _cm_search = st.text_input("Buscar por nombre", placeholder="Charizard…", key="cm_search")
+            _cm_set_opts = ["Todas"] + sorted(_cm_inv["set_name"].dropna().unique().tolist())
+            _cm_set = st.selectbox("Expansión", _cm_set_opts, key="cm_set")
+            _cm_lang_opts = ["Todos"] + sorted(_cm_inv["language"].dropna().unique().tolist())
+            _cm_lang = st.selectbox("Idioma", _cm_lang_opts, key="cm_lang")
+
+            _cm_mask = pd.Series(True, index=_cm_inv.index)
+            if _cm_search:
+                _cm_mask &= _cm_inv["display_name"].str.contains(_cm_search, case=False, na=False)
+            if _cm_set != "Todas":
+                _cm_mask &= _cm_inv["set_name"] == _cm_set
+            if _cm_lang != "Todos":
+                _cm_mask &= _cm_inv["language"] == _cm_lang
+
+            _cm_res = _cm_inv[_cm_mask]
+            if _cm_res.empty:
+                st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin resultados</span>', unsafe_allow_html=True)
+            else:
+                for _, _cm_row in _cm_res.iterrows():
+                    _cm_col1, _cm_col2, _cm_col3 = st.columns([3, 1, 1])
+                    with _cm_col1:
+                        st.markdown(f"**{_cm_row['display_name']}** ({_cm_row['language']}) — {_cm_row['set_name']}")
+                    with _cm_col2:
+                        st.markdown(f"€{float(_cm_row.get('listed_price_eur', 0.0) or 0.0):.2f}")
+                    with _cm_col3:
+                        if st.button("+ Añadir", key=f"cm_add_{_cm_row['internal_sku']}"):
+                            _ok, _msg = register_scan_cm(_cm_row["internal_sku"])
+                            st.session_state.cm_last_msg = _msg
+                            st.session_state.cm_last_ok = _ok
+                            st.rerun()
+
+    # ── Cerrar Caja ─────────────────────────────────────────────────────────
+    st.divider()
+    if st.button("🔒  CERRAR CAJA CARDMARKET", use_container_width=True, type="primary"):
+        if not st.session_state.cm_sales:
+            st.warning("No hay artículos para exportar")
+        else:
+            # Construir DataFrame con lookup en catalog
+            _cm_export_rows = []
+            for _idx, _sale in enumerate(st.session_state.cm_sales, 1):
+                _sku = _sale["internal_sku"]
+                _cat_row = catalog.loc[_sku] if _sku in catalog.index else None
+
+                _shipment_nr = _idx
+                _date = _sale["sale_ts"].split("T")[0]  # YYYY-MM-DD
+                _article = _sale["display_name"]
+                _product_id = _cat_row["cardmarket_id"] if _cat_row is not None else _sku
+                _expansion = _cat_row["set_name"] if _cat_row is not None else ""
+                _category = "Pokemon Single"
+                _amount = _sale["qty"]
+                _value = float(_sale["unit_price"] or 0.0)
+                _total = _amount * _value
+                _currency = "EUR"
+                _language = _cat_row["language"] if _cat_row is not None else _sale["language"]
+                _rarity = _cat_row["business_rarity"] if _cat_row is not None else _sale["business_rarity"]
+
+                _cm_export_rows.append({
+                    "Shipment nr.": _shipment_nr,
+                    "Date of purchase": _date,
+                    "Article": _article,
+                    "Product ID": _product_id,
+                    "Localized Product Name": "",
+                    "Expansion": _expansion,
+                    "Category": _category,
+                    "Amount": _amount,
+                    "Article Value": f"{_value:.2f}",
+                    "Total": f"{_total:.2f}",
+                    "Currency": _currency,
+                    "Language": _language,
+                    "Rarity": _rarity,
+                })
+
+            _cm_df_export = pd.DataFrame(_cm_export_rows)
+            _cm_csv_bytes = _cm_df_export.to_csv(index=False).encode("utf-8")
+            _cm_filename = f"Articles-byPurchaseDate-{TODAY}_{TODAY}.csv"
+
+            st.download_button(
+                "⬇️  Descargar CSV Cardmarket",
+                data=_cm_csv_bytes,
+                file_name=_cm_filename,
+                mime="text/csv",
+                use_container_width=True,
+                key="cm_download_csv",
+            )
+
+            # Opción de resetear sesión
+            if st.button("🔄  Nueva sesión", use_container_width=True):
+                st.session_state.cm_sales = []
+                st.session_state.cm_session_id = str(uuid.uuid4())[:8]
+                st.session_state.cm_scan_counter = 0
+                st.rerun()
