@@ -1124,6 +1124,8 @@ if "cm_session_id" not in st.session_state:
     st.session_state.cm_session_id = str(uuid.uuid4())[:8]
 if "cm_scan_counter" not in st.session_state:
     st.session_state.cm_scan_counter = 0
+if "cm_completed_orders" not in st.session_state:
+    st.session_state.cm_completed_orders = []
 if "cm_last_msg" not in st.session_state:
     st.session_state.cm_last_msg = ""
 if "cm_last_ok" not in st.session_state:
@@ -1925,66 +1927,88 @@ with _tab_cm:
                             st.session_state.cm_last_ok = _ok
                             st.rerun()
 
-    # ── Cerrar Caja ─────────────────────────────────────────────────────────
-    st.divider()
-    if st.button("🔒  CERRAR CAJA CARDMARKET", use_container_width=True, type="primary"):
-        if not st.session_state.cm_sales:
-            st.warning("No hay artículos para exportar")
+    # ── Nuevo Pedido ────────────────────────────────────────────────────────
+    def _nuevo_pedido_cm():
+        if st.session_state.cm_sales:
+            # Guardar pedido completado con total
+            order_total = sum(s.get("gross_amount", 0.0) for s in st.session_state.cm_sales)
+            order_qty = len(st.session_state.cm_sales)
+            st.session_state.cm_completed_orders.append({
+                "session_id": st.session_state.cm_session_id,
+                "items": st.session_state.cm_sales.copy(),
+                "total": order_total,
+                "qty": order_qty,
+                "timestamp": datetime.now(TZ_MADRID).isoformat(timespec="seconds"),
+            })
+        # Resetear para nuevo pedido
+        st.session_state.cm_sales = []
+        st.session_state.cm_session_id = str(uuid.uuid4())[:8]
+        st.session_state.cm_scan_counter = 0
+        st.session_state.cm_last_msg = ""
+        st.session_state.cm_last_ok = True
+
+    st.button("➕ Nuevo pedido", key="new_pedido_cm", use_container_width=True,
+              type="secondary", on_click=_nuevo_pedido_cm)
+
+    # ── Resumen de Pedidos Completados ──────────────────────────────────────
+    if st.session_state.cm_completed_orders:
+        n_orders = len(st.session_state.cm_completed_orders)
+        total_qty_day = sum(o["qty"] for o in st.session_state.cm_completed_orders)
+        total_amount_day = sum(o["total"] for o in st.session_state.cm_completed_orders)
+
+        # Mostrar en dropdown si hay más de 10 pedidos
+        if n_orders > 10:
+            with st.expander(f"📋 Pedidos del día ({n_orders}) — Total: €{total_amount_day:.2f}", expanded=False):
+                st.markdown(
+                    f'<div style="display:flex;gap:2rem;margin-bottom:1rem;">'
+                    f'<div><span style="color:var(--prisma-muted);font-size:0.8rem;">Total artículos</span>'
+                    f'<p style="font-size:1.2rem;font-weight:700;">{total_qty_day} uds</p></div>'
+                    f'<div><span style="color:var(--prisma-muted);font-size:0.8rem;">Total ingresos</span>'
+                    f'<p style="font-size:1.2rem;font-weight:700;color:var(--prisma-accent);">€{total_amount_day:.2f}</p></div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown('<div style="border-top:1px solid var(--prisma-border);margin:1rem 0;"></div>', unsafe_allow_html=True)
+                for i, order in enumerate(reversed(st.session_state.cm_completed_orders), 1):
+                    try:
+                        t = datetime.fromisoformat(order["timestamp"]).strftime("%H:%M")
+                    except (ValueError, TypeError):
+                        t = "—"
+                    st.markdown(
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--prisma-border);">'
+                        f'<span style="font-size:0.85rem;"><b>Pedido #{len(st.session_state.cm_completed_orders) - i + 1}</b> {t}</span>'
+                        f'<span style="font-size:0.85rem;"><b>{order["qty"]} art.</b> · €{order["total"]:.2f}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
         else:
-            # Construir DataFrame con lookup en catalog
-            _cm_export_rows = []
-            for _idx, _sale in enumerate(st.session_state.cm_sales, 1):
-                _sku = _sale["internal_sku"]
-                _cat_row = catalog.loc[_sku] if _sku in catalog.index else None
-
-                _shipment_nr = _idx
-                _date = _sale["sale_ts"].split("T")[0]  # YYYY-MM-DD
-                _article = _sale["display_name"]
-                _product_id = _cat_row["cardmarket_id"] if _cat_row is not None else _sku
-                _expansion = _cat_row["set_name"] if _cat_row is not None else ""
-                _category = "Pokemon Single"
-                _amount = _sale["qty"]
-                _value = float(_sale["unit_price"] or 0.0)
-                _total = _amount * _value
-                _currency = "EUR"
-                _language = _cat_row["language"] if _cat_row is not None else _sale["language"]
-                _rarity = _cat_row["business_rarity"] if _cat_row is not None else _sale["business_rarity"]
-
-                _cm_export_rows.append({
-                    "Shipment nr.": _shipment_nr,
-                    "Date of purchase": _date,
-                    "Article": _article,
-                    "Product ID": _product_id,
-                    "Localized Product Name": "",
-                    "Expansion": _expansion,
-                    "Category": _category,
-                    "Amount": _amount,
-                    "Article Value": f"{_value:.2f}",
-                    "Total": f"{_total:.2f}",
-                    "Currency": _currency,
-                    "Language": _language,
-                    "Rarity": _rarity,
-                })
-
-            _cm_df_export = pd.DataFrame(_cm_export_rows)
-            _cm_csv_bytes = _cm_df_export.to_csv(index=False).encode("utf-8")
-            _cm_filename = f"Articles-byPurchaseDate-{TODAY}_{TODAY}.csv"
-
-            st.download_button(
-                "⬇️  Descargar CSV Cardmarket",
-                data=_cm_csv_bytes,
-                file_name=_cm_filename,
-                mime="text/csv",
-                use_container_width=True,
-                key="cm_download_csv",
+            # Mostrar todos los pedidos sin expandir si son 10 o menos
+            st.markdown(
+                f'<p style="color:var(--prisma-muted);font-weight:700;font-size:0.8rem;'
+                f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">📋 Pedidos del día ({n_orders})</p>',
+                unsafe_allow_html=True,
             )
-
-            # Opción de resetear sesión
-            if st.button("🔄  Nueva sesión", use_container_width=True):
-                st.session_state.cm_sales = []
-                st.session_state.cm_session_id = str(uuid.uuid4())[:8]
-                st.session_state.cm_scan_counter = 0
-                st.rerun()
+            scroll_h = 250 if n_orders > 5 else None
+            container = st.container(height=scroll_h) if scroll_h else st.container()
+            with container:
+                for i, order in enumerate(reversed(st.session_state.cm_completed_orders), 1):
+                    try:
+                        t = datetime.fromisoformat(order["timestamp"]).strftime("%H:%M")
+                    except (ValueError, TypeError):
+                        t = "—"
+                    st.markdown(
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--prisma-border);">'
+                        f'<span style="font-size:0.85rem;"><b>Pedido #{len(st.session_state.cm_completed_orders) - i + 1}</b> {t}</span>'
+                        f'<span style="font-size:0.85rem;"><b>{order["qty"]} art.</b> · €{order["total"]:.2f}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+            st.markdown(
+                f'<div style="background:var(--prisma-surface);padding:0.8rem;border-radius:0.4rem;'
+                f'margin-top:0.8rem;border-left:4px solid var(--prisma-accent);">'
+                f'<strong style="font-size:0.9rem;">Total del día:</strong> {total_qty_day} artículos · €{total_amount_day:.2f}</div>',
+                unsafe_allow_html=True,
+            )
 # ─────────────────────────────────────────────
 # I) TAB BUSCAR CARTA
 # ─────────────────────────────────────────────
