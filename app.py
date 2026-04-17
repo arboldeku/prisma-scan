@@ -1331,21 +1331,24 @@ if not sess_sales:
     st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin artículos — escanea para añadir</span>', unsafe_allow_html=True)
 else:
     df_sess = pd.DataFrame(sess_sales)
-    grp_sess = df_sess.groupby(
-        ["internal_sku", "display_name", "language", "business_rarity"],
-        as_index=False
-    )["qty"].sum().sort_values("display_name")
-    for _, row in grp_sess.iterrows():
+    # Agrupar por producto pero mantener precios originales
+    for _, original_row in df_sess.iterrows():
+        _unit_p = float(original_row.get("unit_price", 0.0) or 0.0)
+        _qty = float(original_row.get("qty", 1) or 1)
+        _total = _unit_p * _qty
         st.markdown(
-            f'<div style="display:flex;justify-content:space-between;'
-            f'padding:5px 0;border-bottom:1px solid var(--prisma-border);">'
-            f'<span style="font-size:0.82rem;"><b>{row["display_name"]}</b> '
-            f'<span style="color:var(--prisma-muted);">· {row["language"]} · {row["business_rarity"]}</span></span>'
-            f'<span style="font-family:JetBrains Mono,monospace;color:var(--prisma-accent);font-weight:700;">×{int(row["qty"])}</span>'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+            f'padding:8px 0;border-bottom:1px solid var(--prisma-border);">'
+            f'<span style="flex:1;font-size:0.82rem;"><b>{original_row["display_name"]}</b> '
+            f'<span style="color:var(--prisma-muted);font-size:0.75rem;">· {original_row["language"]} · {original_row["business_rarity"]}</span></span>'
+            f'<span style="font-size:0.85rem;font-weight:600;min-width:50px;text-align:right;">€{_unit_p:.2f}</span>'
+            f'<span style="font-size:0.85rem;min-width:40px;text-align:right;margin:0 12px;">×{int(_qty)}</span>'
+            f'<span style="font-weight:700;color:var(--prisma-accent);min-width:70px;text-align:right;">€{_total:.2f}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
     total_u = int(df_sess["qty"].sum())
+    total_price = float(df_sess["gross_amount"].sum() or 0.0)
 
     # ¿Hay cambios con dinero en esta sesión?
     has_cambio_money = any(
@@ -1353,6 +1356,10 @@ else:
         for s in sess_sales
     )
 
+    # Separador
+    st.markdown('<div style="border-top:2px solid var(--prisma-border);margin:12px 0;"></div>', unsafe_allow_html=True)
+
+    # Descuento
     disc_val = st.number_input(
         "Descuento (€)", min_value=0.0, max_value=9999.0,
         value=st.session_state.session_discount,
@@ -1361,14 +1368,37 @@ else:
     st.session_state.session_discount = disc_val
     tamt_val = st.session_state.session_trade_amount
 
-    extras = []
-    if disc_val > 0:
-        extras.append(f'<span style="color:var(--prisma-danger);">-{disc_val:.2f}€ dto.</span>')
-    if tamt_val > 0:
-        extras.append(f'<span style="color:var(--prisma-info);">{tamt_val:.2f}€ cambio</span>')
+    # Cálculo final
+    final_total = total_price - disc_val
+
+    # Mostrar TOTAL grande y claro
     st.markdown(
-        f'<div style="margin-top:4px;font-size:0.78rem;color:var(--prisma-muted);text-align:right;">'
-        f'{total_u} carta(s){"  ·  ".join([""] + extras) if extras else ""}</div>',
+        f'<div style="background:var(--prisma-surface);padding:0.8rem;border-radius:0.4rem;'
+        f'border-left:4px solid var(--prisma-accent);margin-bottom:0.8rem;">'
+        f'<div style="display:flex;justify-content:space-between;margin-bottom:4px;">'
+        f'<span style="font-size:0.8rem;color:var(--prisma-muted);">Subtotal:</span>'
+        f'<span style="font-family:JetBrains Mono,monospace;font-weight:600;">€{total_price:.2f}</span>'
+        f'</div>'
+        f'{"<div style=\"display:flex;justify-content:space-between;margin-bottom:4px;\">" if disc_val > 0 else ""}'
+        f'{"<span style=\"font-size:0.8rem;color:var(--prisma-danger);\">Descuento:</span>" if disc_val > 0 else ""}'
+        f'{"<span style=\"font-family:JetBrains Mono,monospace;font-weight:600;color:var(--prisma-danger);\">-€" + f"{disc_val:.2f}" + "</span>" if disc_val > 0 else ""}'
+        f'{"</div>" if disc_val > 0 else ""}'
+        f'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--prisma-border);padding-top:8px;">'
+        f'<span style="font-size:1.1rem;font-weight:700;">TOTAL:</span>'
+        f'<span style="font-size:1.2rem;font-weight:700;color:var(--prisma-accent);font-family:JetBrains Mono,monospace;">€{final_total:.2f}</span>'
+        f'</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Info adicional
+    extras = []
+    extras.append(f'{total_u} carta(s)')
+    if tamt_val > 0:
+        extras.append(f'<span style="color:var(--prisma-info);">+€{tamt_val:.2f} cambio</span>')
+    st.markdown(
+        f'<div style="font-size:0.75rem;color:var(--prisma-muted);text-align:right;margin-top:0.4rem;">'
+        f'{" · ".join(extras)}</div>',
         unsafe_allow_html=True,
     )
 
@@ -1817,22 +1847,38 @@ with _tab_cm:
         else:
             st.error(f"✗ {st.session_state.cm_last_msg}")
 
-    # ── Tabla de ventas ─────────────────────────────────────────────────────
+    # ── Tabla de ventas (estilo supermercado) ──────────────────────────────
     if st.session_state.cm_sales:
-        _cm_df = pd.DataFrame(st.session_state.cm_sales)[
-            ["display_name", "language", "set_name", "unit_price", "gross_amount"]
-        ].rename(columns={
-            "display_name": "Artículo",
-            "language": "Idioma",
-            "set_name": "Expansión",
-            "unit_price": "Precio",
-            "gross_amount": "Total",
-        })
-        st.dataframe(_cm_df, use_container_width=True, hide_index=True, height=250)
-        _cm_total = sum(s.get("gross_amount", 0.0) for s in st.session_state.cm_sales)
+        _cm_df = pd.DataFrame(st.session_state.cm_sales)
+        for _, _cm_row in _cm_df.iterrows():
+            _cm_unit_p = float(_cm_row.get("unit_price", 0.0) or 0.0)
+            _cm_qty = float(_cm_row.get("qty", 1) or 1)
+            _cm_total = _cm_unit_p * _cm_qty
+            st.markdown(
+                f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                f'padding:8px 0;border-bottom:1px solid var(--prisma-border);">'
+                f'<span style="flex:1;font-size:0.82rem;"><b>{_cm_row["display_name"]}</b> '
+                f'<span style="color:var(--prisma-muted);font-size:0.75rem;">· {_cm_row["language"]} · {_cm_row.get("set_name", "")}</span></span>'
+                f'<span style="font-size:0.85rem;font-weight:600;min-width:50px;text-align:right;">€{_cm_unit_p:.2f}</span>'
+                f'<span style="font-size:0.85rem;min-width:40px;text-align:right;margin:0 12px;">×{int(_cm_qty)}</span>'
+                f'<span style="font-weight:700;color:var(--prisma-accent);min-width:70px;text-align:right;">€{_cm_total:.2f}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Separador
+        st.markdown('<div style="border-top:2px solid var(--prisma-border);margin:12px 0;"></div>', unsafe_allow_html=True)
+
+        # Total
+        _cm_total_price = float(_cm_df["gross_amount"].sum() or 0.0)
         st.markdown(
-            f'<div style="background:var(--prisma-surface);padding:0.8rem;border-radius:0.4rem;">'
-            f'<strong>Total sesión:</strong> €{_cm_total:.2f} ({len(st.session_state.cm_sales)} artículos)'
+            f'<div style="background:var(--prisma-surface);padding:0.8rem;border-radius:0.4rem;'
+            f'border-left:4px solid var(--prisma-accent);margin-bottom:0.8rem;">'
+            f'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--prisma-border);padding-top:8px;">'
+            f'<span style="font-size:1.1rem;font-weight:700;">TOTAL CARDMARKET:</span>'
+            f'<span style="font-size:1.2rem;font-weight:700;color:var(--prisma-accent);font-family:JetBrains Mono,monospace;">€{_cm_total_price:.2f}</span>'
+            f'</div>'
+            f'<div style="font-size:0.75rem;color:var(--prisma-muted);text-align:right;margin-top:0.4rem;">{len(st.session_state.cm_sales)} artículo(s)</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
