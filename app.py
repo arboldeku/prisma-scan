@@ -1849,13 +1849,18 @@ with _tab_cm:
         else:
             st.error(f"✗ {st.session_state.cm_last_msg}")
 
-    # ── Tabla de ventas (estilo supermercado) ──────────────────────────────
-    if st.session_state.cm_sales:
-        _cm_df = pd.DataFrame(st.session_state.cm_sales)
+    # ── 🧾 TICKET ACTUAL ────────────────────────────────────────────────────
+    st.markdown('<p class="summary-title">🧾 Ticket actual</p>', unsafe_allow_html=True)
+
+    _cm_sales = st.session_state.cm_sales
+    if not _cm_sales:
+        st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin artículos — escanea para añadir</span>', unsafe_allow_html=True)
+    else:
+        _cm_df = pd.DataFrame(_cm_sales)
         for _, _cm_row in _cm_df.iterrows():
             _cm_unit_p = float(_cm_row.get("unit_price", 0.0) or 0.0)
             _cm_qty = float(_cm_row.get("qty", 1) or 1)
-            _cm_total = _cm_unit_p * _cm_qty
+            _cm_item_total = _cm_unit_p * _cm_qty
             st.markdown(
                 f'<div style="display:flex;justify-content:space-between;align-items:center;'
                 f'padding:8px 0;border-bottom:1px solid var(--prisma-border);">'
@@ -1863,29 +1868,44 @@ with _tab_cm:
                 f'<span style="color:var(--prisma-muted);font-size:0.75rem;">· {_cm_row["language"]} · {_cm_row.get("set_name", "")}</span></span>'
                 f'<span style="font-size:0.85rem;font-weight:600;min-width:50px;text-align:right;">€{_cm_unit_p:.2f}</span>'
                 f'<span style="font-size:0.85rem;min-width:40px;text-align:right;margin:0 12px;">×{int(_cm_qty)}</span>'
-                f'<span style="font-weight:700;color:var(--prisma-accent);min-width:70px;text-align:right;">€{_cm_total:.2f}</span>'
+                f'<span style="font-weight:700;color:var(--prisma-accent);min-width:70px;text-align:right;">€{_cm_item_total:.2f}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
 
-        # Separador
-        st.markdown('<div style="border-top:2px solid var(--prisma-border);margin:12px 0;"></div>', unsafe_allow_html=True)
-
-        # Total
         _cm_total_price = float(_cm_df["gross_amount"].sum() or 0.0)
+        st.markdown('<div style="border-top:2px solid var(--prisma-border);margin:12px 0;"></div>', unsafe_allow_html=True)
         st.markdown(
             f'<div style="background:var(--prisma-surface);padding:0.8rem;border-radius:0.4rem;'
             f'border-left:4px solid var(--prisma-accent);margin-bottom:0.8rem;">'
             f'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--prisma-border);padding-top:8px;">'
-            f'<span style="font-size:1.1rem;font-weight:700;">TOTAL CARDMARKET:</span>'
+            f'<span style="font-size:1.1rem;font-weight:700;">TOTAL:</span>'
             f'<span style="font-size:1.2rem;font-weight:700;color:var(--prisma-accent);font-family:JetBrains Mono,monospace;">€{_cm_total_price:.2f}</span>'
             f'</div>'
-            f'<div style="font-size:0.75rem;color:var(--prisma-muted);text-align:right;margin-top:0.4rem;">{len(st.session_state.cm_sales)} artículo(s)</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
-    else:
-        st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin artículos escaneados aún</span>', unsafe_allow_html=True)
+
+    # ── Nuevo Pedido ────────────────────────────────────────────────────────
+    def _nuevo_pedido_cm():
+        if st.session_state.cm_sales:
+            order_total = sum(s.get("gross_amount", 0.0) for s in st.session_state.cm_sales)
+            order_qty = len(st.session_state.cm_sales)
+            st.session_state.cm_completed_orders.append({
+                "session_id": st.session_state.cm_session_id,
+                "items": st.session_state.cm_sales.copy(),
+                "total": order_total,
+                "qty": order_qty,
+                "timestamp": datetime.now(TZ_MADRID).isoformat(timespec="seconds"),
+            })
+        st.session_state.cm_sales = []
+        st.session_state.cm_session_id = str(uuid.uuid4())[:8]
+        st.session_state.cm_scan_counter = 0
+        st.session_state.cm_last_msg = ""
+        st.session_state.cm_last_ok = True
+
+    st.button("➕ Nuevo pedido", key="new_pedido_cm", use_container_width=True,
+              type="secondary", on_click=_nuevo_pedido_cm)
 
     # ── Buscador manual ─────────────────────────────────────────────────────
     with st.expander("🔍  Buscar y añadir manualmente"):
@@ -1927,88 +1947,147 @@ with _tab_cm:
                             st.session_state.cm_last_ok = _ok
                             st.rerun()
 
-    # ── Nuevo Pedido ────────────────────────────────────────────────────────
-    def _nuevo_pedido_cm():
-        if st.session_state.cm_sales:
-            # Guardar pedido completado con total
-            order_total = sum(s.get("gross_amount", 0.0) for s in st.session_state.cm_sales)
-            order_qty = len(st.session_state.cm_sales)
-            st.session_state.cm_completed_orders.append({
-                "session_id": st.session_state.cm_session_id,
-                "items": st.session_state.cm_sales.copy(),
-                "total": order_total,
-                "qty": order_qty,
-                "timestamp": datetime.now(TZ_MADRID).isoformat(timespec="seconds"),
-            })
-        # Resetear para nuevo pedido
-        st.session_state.cm_sales = []
-        st.session_state.cm_session_id = str(uuid.uuid4())[:8]
-        st.session_state.cm_scan_counter = 0
-        st.session_state.cm_last_msg = ""
-        st.session_state.cm_last_ok = True
+    # ── RESUMEN DIARIO ──────────────────────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(
+        '<p style="font-family:\'JetBrains Mono\',monospace;font-size:0.75rem;'
+        'letter-spacing:0.12em;color:var(--prisma-muted);text-transform:uppercase;'
+        'margin-bottom:0.5rem;">REGISTRO DEL DÍA</p>',
+        unsafe_allow_html=True,
+    )
 
-    st.button("➕ Nuevo pedido", key="new_pedido_cm", use_container_width=True,
-              type="secondary", on_click=_nuevo_pedido_cm)
-
-    # ── Resumen de Pedidos Completados ──────────────────────────────────────
-    if st.session_state.cm_completed_orders:
+    if not st.session_state.cm_completed_orders:
+        st.markdown(
+            '<div class="alert alert-warn" style="text-align:center; margin-top:0.5rem;">'
+            "Sin pedidos completados aún</div>",
+            unsafe_allow_html=True,
+        )
+    else:
         n_orders = len(st.session_state.cm_completed_orders)
         total_qty_day = sum(o["qty"] for o in st.session_state.cm_completed_orders)
         total_amount_day = sum(o["total"] for o in st.session_state.cm_completed_orders)
 
-        # Mostrar en dropdown si hay más de 10 pedidos
-        if n_orders > 10:
-            with st.expander(f"📋 Pedidos del día ({n_orders}) — Total: €{total_amount_day:.2f}", expanded=False):
+        # Métricas
+        col1, col2 = st.columns(2)
+        col1.markdown(
+            f'<div class="metric-card"><p class="metric-value" style="color:var(--prisma-success);">{total_qty_day}</p>'
+            '<p class="metric-label">Artículos</p></div>', unsafe_allow_html=True)
+        col2.markdown(
+            f'<div class="metric-card"><p class="metric-value" style="color:var(--prisma-accent);">€{total_amount_day:.2f}</p>'
+            '<p class="metric-label">Total ingresos</p></div>', unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Lista de pedidos
+        st.markdown(
+            f'<p style="color:var(--prisma-info);font-weight:700;font-size:0.8rem;'
+            f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">📋 PEDIDOS ({n_orders})</p>',
+            unsafe_allow_html=True,
+        )
+
+        scroll_h = 450 if n_orders > 10 else None
+        container = st.container(height=scroll_h) if scroll_h else st.container()
+        with container:
+            for i, order in enumerate(reversed(st.session_state.cm_completed_orders), 1):
+                try:
+                    t = datetime.fromisoformat(order["timestamp"]).strftime("%H:%M")
+                except (ValueError, TypeError):
+                    t = "—"
+                order_num = len(st.session_state.cm_completed_orders) - i + 1
                 st.markdown(
-                    f'<div style="display:flex;gap:2rem;margin-bottom:1rem;">'
-                    f'<div><span style="color:var(--prisma-muted);font-size:0.8rem;">Total artículos</span>'
-                    f'<p style="font-size:1.2rem;font-weight:700;">{total_qty_day} uds</p></div>'
-                    f'<div><span style="color:var(--prisma-muted);font-size:0.8rem;">Total ingresos</span>'
-                    f'<p style="font-size:1.2rem;font-weight:700;color:var(--prisma-accent);">€{total_amount_day:.2f}</p></div>'
-                    f'</div>',
+                    f'<div style="border-left:3px solid var(--prisma-info);padding-left:8px;margin-bottom:4px;">'
+                    f'<span style="font-size:0.85rem;font-weight:600;">Pedido #{order_num}</span><br>'
+                    f'<span style="font-size:0.7rem;color:var(--prisma-muted);">{t} · {order["qty"]} art. · €{order["total"]:.2f}</span></div>',
                     unsafe_allow_html=True,
                 )
-                st.markdown('<div style="border-top:1px solid var(--prisma-border);margin:1rem 0;"></div>', unsafe_allow_html=True)
-                for i, order in enumerate(reversed(st.session_state.cm_completed_orders), 1):
-                    try:
-                        t = datetime.fromisoformat(order["timestamp"]).strftime("%H:%M")
-                    except (ValueError, TypeError):
-                        t = "—"
-                    st.markdown(
-                        f'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--prisma-border);">'
-                        f'<span style="font-size:0.85rem;"><b>Pedido #{len(st.session_state.cm_completed_orders) - i + 1}</b> {t}</span>'
-                        f'<span style="font-size:0.85rem;"><b>{order["qty"]} art.</b> · €{order["total"]:.2f}</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-        else:
-            # Mostrar todos los pedidos sin expandir si son 10 o menos
-            st.markdown(
-                f'<p style="color:var(--prisma-muted);font-weight:700;font-size:0.8rem;'
-                f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">📋 Pedidos del día ({n_orders})</p>',
-                unsafe_allow_html=True,
-            )
-            scroll_h = 250 if n_orders > 5 else None
-            container = st.container(height=scroll_h) if scroll_h else st.container()
-            with container:
-                for i, order in enumerate(reversed(st.session_state.cm_completed_orders), 1):
-                    try:
-                        t = datetime.fromisoformat(order["timestamp"]).strftime("%H:%M")
-                    except (ValueError, TypeError):
-                        t = "—"
-                    st.markdown(
-                        f'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--prisma-border);">'
-                        f'<span style="font-size:0.85rem;"><b>Pedido #{len(st.session_state.cm_completed_orders) - i + 1}</b> {t}</span>'
-                        f'<span style="font-size:0.85rem;"><b>{order["qty"]} art.</b> · €{order["total"]:.2f}</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-            st.markdown(
-                f'<div style="background:var(--prisma-surface);padding:0.8rem;border-radius:0.4rem;'
-                f'margin-top:0.8rem;border-left:4px solid var(--prisma-accent);">'
-                f'<strong style="font-size:0.9rem;">Total del día:</strong> {total_qty_day} artículos · €{total_amount_day:.2f}</div>',
-                unsafe_allow_html=True,
-            )
+
+        st.markdown(
+            f'<div style="background:var(--prisma-surface);padding:0.8rem;border-radius:0.4rem;'
+            f'margin-top:0.8rem;border-left:3px solid var(--prisma-info);">'
+            f'<strong style="font-size:0.9rem;">Total del día:</strong> €{total_amount_day:.2f}</div>',
+            unsafe_allow_html=True,
+        )
+
+    # ── CERRAR CAJA ─────────────────────────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(
+        '<p style="font-family:\'JetBrains Mono\',monospace;font-size:0.75rem;'
+        'letter-spacing:0.12em;color:var(--prisma-muted);text-transform:uppercase;'
+        'margin-bottom:0.5rem;">CERRAR CAJA</p>',
+        unsafe_allow_html=True,
+    )
+
+    if st.session_state.cm_completed_orders or st.session_state.cm_sales:
+        if st.button("🔒  CERRAR CAJA CARDMARKET", use_container_width=True, type="primary"):
+            all_items = []
+            for order in st.session_state.cm_completed_orders:
+                all_items.extend(order["items"])
+            all_items.extend(st.session_state.cm_sales)
+
+            if not all_items:
+                st.warning("No hay artículos para exportar")
+            else:
+                # Construir CSV en formato Cardmarket
+                _cm_export_rows = []
+                for _idx, _sale in enumerate(all_items, 1):
+                    _sku = _sale["internal_sku"]
+                    _cat_row = catalog.loc[_sku] if _sku in catalog.index else None
+
+                    _shipment_nr = _idx
+                    _date = _sale["sale_ts"].split("T")[0]
+                    _article = _sale["display_name"]
+                    _product_id = _cat_row["cardmarket_id"] if _cat_row is not None else _sku
+                    _expansion = _cat_row["set_name"] if _cat_row is not None else ""
+                    # Detectar TCG desde set_code: Si contiene "OP" es One Piece, sino Pokemon
+                    _set_code = _cat_row["set_code"] if _cat_row is not None else ""
+                    _category = "One Piece Single" if "OP" in str(_set_code).upper() else "Pokemon Single"
+                    _amount = _sale["qty"]
+                    _value = float(_sale["unit_price"] or 0.0)
+                    _total = _amount * _value
+                    _currency = "EUR"
+                    _language = _cat_row["language"] if _cat_row is not None else _sale["language"]
+                    _rarity = _cat_row["business_rarity"] if _cat_row is not None else _sale["business_rarity"]
+
+                    _cm_export_rows.append({
+                        "Shipment nr.": _shipment_nr,
+                        "Date of purchase": _date,
+                        "Article": _article,
+                        "Product ID": _product_id,
+                        "Localized Product Name": "",
+                        "Expansion": _expansion,
+                        "Category": _category,
+                        "Amount": _amount,
+                        "Article Value": f"{_value:.2f}",
+                        "Total": f"{_total:.2f}",
+                        "Currency": _currency,
+                        "Language": _language,
+                        "Rarity": _rarity,
+                    })
+
+                _cm_df_export = pd.DataFrame(_cm_export_rows)
+                _cm_csv_bytes = _cm_df_export.to_csv(index=False).encode("utf-8")
+                _cm_filename = f"Articles-byPurchaseDate-{TODAY}_{TODAY}.csv"
+
+                st.download_button(
+                    "⬇️  Descargar CSV Cardmarket",
+                    data=_cm_csv_bytes,
+                    file_name=_cm_filename,
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="cm_download_csv",
+                )
+
+                st.markdown(
+                    f'<p style="font-size:0.72rem;color:var(--prisma-muted);text-align:center;">'
+                    f'Genera <code>{_cm_filename}</code> · Súbelo a tu cuenta de Cardmarket.</p>',
+                    unsafe_allow_html=True,
+                )
+    else:
+        st.markdown(
+            '<p style="font-size:0.78rem;color:var(--prisma-muted);text-align:center;">'
+            "Sin pedidos registrados hoy — el botón aparecerá al cerrar el primer pedido.</p>",
+            unsafe_allow_html=True,
+        )
 # ─────────────────────────────────────────────
 # I) TAB BUSCAR CARTA
 # ─────────────────────────────────────────────
