@@ -1144,7 +1144,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-_tab_scan, _tab_labels, _tab_cm = st.tabs(["⚡  Escáner", "🏷️  Etiquetas", "📦  Cardmarket"])
+_tab_scan, _tab_labels, _tab_cm, _tab_search = st.tabs(["⚡  Escáner", "🏷️  Etiquetas", "📦  Cardmarket", "🔎  Buscar Carta"])
 _tab_scan.__enter__()   # todo el contenido siguiente va al tab de escáner
 
 # ─────────────────────────────────────────────
@@ -1515,7 +1515,12 @@ else:
                     if sc or cn:
                         set_info = f" · {sc} {cn}".strip()
 
-                c1, c2 = st.columns([5, 1])
+                # Precio y total
+                _unit_price = float(row.get("unit_price", 0.0) or 0.0)
+                _qty = float(row.get("qty", 1) or 1)
+                _total = _unit_price * _qty
+
+                c1, c2, c3, c4 = st.columns([4, 1, 1, 1])
                 c1.markdown(
                     f'<div style="border-left:3px solid {color};padding-left:8px;margin-bottom:4px;">'
                     f'<span style="font-size:0.85rem;font-weight:600;">{row["display_name"]}</span><br>'
@@ -1523,11 +1528,22 @@ else:
                     f'{t} · {row["language"]} · {row["business_rarity"]}{set_info}</span></div>',
                     unsafe_allow_html=True,
                 )
-                if c2.button("✕", key=f"void_{prefix}_{row['sale_event_id']}"):
+                c2.markdown(f'<span style="font-size:0.85rem;text-align:right;">€{_unit_price:.2f}</span>', unsafe_allow_html=True)
+                c3.markdown(f'<span style="font-size:0.85rem;text-align:right;">×{int(_qty)}</span>', unsafe_allow_html=True)
+                if c4.button("✕", key=f"void_{prefix}_{row['sale_event_id']}"):
                     void_sale(row.to_dict())
                     st.session_state.last_msg = f"Anulada: {row['display_name']}"
                     st.session_state.last_ok  = True
                     st.rerun()
+
+        # Total de la categoría activa
+        _cat_total = float(df_lista["gross_amount"].sum() or 0.0)
+        st.markdown(
+            f'<div style="background:var(--prisma-surface);padding:0.8rem;border-radius:0.4rem;'
+            f'margin-top:0.8rem;border-left:3px solid {color};">'
+            f'<strong style="font-size:0.9rem;">Total {label.lower()}:</strong> €{_cat_total:.2f}</div>',
+            unsafe_allow_html=True,
+        )
 
 # ─────────────────────────────────────────────
 # E) CERRAR CAJA
@@ -1959,3 +1975,68 @@ with _tab_cm:
                 st.session_state.cm_session_id = str(uuid.uuid4())[:8]
                 st.session_state.cm_scan_counter = 0
                 st.rerun()
+# ─────────────────────────────────────────────
+# I) TAB BUSCAR CARTA
+# ─────────────────────────────────────────────
+with _tab_search:
+    st.markdown('<p class="summary-title" style="margin-bottom:0.8rem;">Buscador de Cartas</p>', unsafe_allow_html=True)
+
+    _search_inv = catalog.reset_index()
+    if "qty" in _search_inv.columns:
+        _search_inv = _search_inv[pd.to_numeric(_search_inv["qty"], errors="coerce").fillna(0) > 0]
+
+    if _search_inv.empty:
+        st.markdown('<span style="color:var(--prisma-muted);">Inventario no disponible</span>', unsafe_allow_html=True)
+    else:
+        st.markdown('<span style="font-size:0.8rem;color:var(--prisma-muted);">Busca por nombre, expansión, idioma o rareza</span>', unsafe_allow_html=True)
+
+        _s1, _s2 = st.columns(2)
+        with _s1:
+            _search_name = st.text_input("Nombre de carta/Pokémon", placeholder="Charizard…", key="search_name_tab")
+        with _s2:
+            _search_set_opts = ["Todas"] + sorted(_search_inv["set_name"].dropna().unique().tolist())
+            _search_set = st.selectbox("Expansión", _search_set_opts, key="search_set_tab")
+
+        _s3, _s4 = st.columns(2)
+        with _s3:
+            _search_lang_opts = ["Todos"] + sorted(_search_inv["language"].dropna().unique().tolist())
+            _search_lang = st.selectbox("Idioma", _search_lang_opts, key="search_lang_tab")
+        with _s4:
+            _search_rar_opts = ["Todas"] + sorted(_search_inv["business_rarity"].dropna().unique().tolist())
+            _search_rar = st.selectbox("Rareza", _search_rar_opts, key="search_rar_tab")
+
+        # Aplicar filtros
+        _search_mask = pd.Series(True, index=_search_inv.index)
+        if _search_name:
+            _search_mask &= _search_inv["display_name"].str.contains(_search_name, case=False, na=False)
+        if _search_set != "Todas":
+            _search_mask &= _search_inv["set_name"] == _search_set
+        if _search_lang != "Todos":
+            _search_mask &= _search_inv["language"] == _search_lang
+        if _search_rar != "Todas":
+            _search_mask &= _search_inv["business_rarity"] == _search_rar
+
+        _search_res = _search_inv[_search_mask]
+
+        if _search_res.empty:
+            st.markdown('<span style="color:var(--prisma-muted);font-size:0.8rem;">Sin resultados — ajusta los filtros</span>', unsafe_allow_html=True)
+        else:
+            # Mostrar resultados en tabla formateada
+            _search_cols = ["display_name", "language", "set_name", "business_rarity", "qty", "listed_price_eur"]
+            _search_display = _search_res[_search_cols].copy()
+            _search_display.columns = ["Carta", "Idioma", "Expansión", "Rareza", "Stock", "Precio"]
+            _search_display["Stock"] = _search_display["Stock"].astype(int)
+            _search_display["Precio"] = _search_display["Precio"].apply(lambda x: f"€{float(x or 0):.2f}")
+
+            st.dataframe(
+                _search_display,
+                use_container_width=True,
+                hide_index=True,
+                height=400
+            )
+
+            st.markdown(
+                f'<span style="color:var(--prisma-muted);font-size:0.72rem;">'
+                f'{len(_search_res)} resultado(s) con stock disponible</span>',
+                unsafe_allow_html=True,
+            )
