@@ -4,6 +4,7 @@ Sistema standalone de registro de ventas para Prisma, tienda de cartas Pokémon.
 Genera CSV diarios para su posterior carga manual a Drive → Pipeline Bronze.
 """
 
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -69,8 +70,10 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 st.markdown(
     """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=DM+Sans:wght@400;500;700&display=swap">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=DM+Sans:wght@400;500;700&display=swap');
 
 :root {
     --prisma-bg:      #0a0a0f;
@@ -292,7 +295,7 @@ def load_store_inventory() -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)
 def load_catalog() -> pd.DataFrame:
     """Carga el catálogo operativo.
 
@@ -400,10 +403,11 @@ def load_ref_cards() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=10)
 def load_daily_sales() -> pd.DataFrame:
     """
-    Lee las ventas del día actual.
-    Sin cache para detectar cambios al instante.
+    Lee las ventas del día actual desde Supabase al arrancar.
+    TTL corto para no martillear la BD en rerenders rápidos.
     Fuente primaria: Supabase scan_events. Fallback: Sheets/CSV.
     """
     if USE_SUPABASE:
@@ -494,15 +498,15 @@ def save_sale(record: dict) -> None:
     """
     Persiste una venta:
       1. Añade a session_state.sales → UI actualizada al instante.
-      2. Escribe en Supabase (primario) o Sheets/CSV (fallback).
+      2. Escribe en Supabase/Sheets/CSV en hilo de fondo (no bloquea UI).
     """
     st.session_state.sales.append(record)
     if USE_SUPABASE:
-        _write_to_supabase(record)
+        threading.Thread(target=_write_to_supabase, args=(record,), daemon=True).start()
     elif USE_SHEETS:
-        _write_to_sheets(record)
+        threading.Thread(target=_write_to_sheets, args=(record,), daemon=True).start()
     else:
-        _write_to_csv(record)
+        threading.Thread(target=_write_to_csv, args=(record,), daemon=True).start()
 
 
 def register_scan(sku: str) -> tuple[bool, str]:
@@ -658,9 +662,9 @@ def register_scan_cm(sku: str) -> tuple[bool, str]:
         "money_direction": "ninguno",
         "trade_amount":   0.0,
     }
-    # Guardar en cm_sales y en Supabase
+    # Guardar en cm_sales y en Supabase (fondo)
     st.session_state.cm_sales.append(record)
-    _write_to_supabase(record)
+    threading.Thread(target=_write_to_supabase, args=(record,), daemon=True).start()
 
     return True, f"{product['display_name']} · {product['language']} · €{_price:.2f}"
 
